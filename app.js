@@ -18,8 +18,10 @@ const syncUrlInput = document.getElementById('syncUrl');
 const syncSheetIdInput = document.getElementById('syncSheetId');
 const syncTokenInput = document.getElementById('syncToken');
 const syncAutoInput = document.getElementById('syncAuto');
+const syncAutoPullInput = document.getElementById('syncAutoPull');
 const syncNowBtn = document.getElementById('syncNow');
 const syncAllBtn = document.getElementById('syncAll');
+const syncPullBtn = document.getElementById('syncPull');
 const syncTestBtn = document.getElementById('syncTest');
 const syncStatus = document.getElementById('syncStatus');
 
@@ -42,6 +44,7 @@ const syncState = {
   sheetId: '',
   token: '',
   auto: false,
+  pullOnLoad: false,
   debounceId: null
 };
 
@@ -440,6 +443,7 @@ function loadSyncConfig() {
       syncState.sheetId = data.sheetId || '';
       syncState.token = data.token || '';
       syncState.auto = !!data.auto;
+      syncState.pullOnLoad = !!data.pullOnLoad;
     } catch {
       // ignore invalid data
     }
@@ -449,6 +453,7 @@ function loadSyncConfig() {
   syncSheetIdInput.value = syncState.sheetId;
   syncTokenInput.value = syncState.token;
   syncAutoInput.checked = syncState.auto;
+  syncAutoPullInput.checked = syncState.pullOnLoad;
   updateSyncStatus(hasSyncConfig() ? 'Gereed om te syncen.' : 'Nog niet verbonden.');
 }
 
@@ -462,12 +467,14 @@ function saveSyncConfig() {
   syncState.sheetId = syncSheetIdInput.value.trim();
   syncState.token = syncTokenInput.value.trim();
   syncState.auto = syncAutoInput.checked;
+  syncState.pullOnLoad = syncAutoPullInput.checked;
   syncUrlInput.value = syncState.url;
   localStorage.setItem(SYNC_KEY, JSON.stringify({
     url: syncState.url,
     sheetId: syncState.sheetId,
     token: syncState.token,
-    auto: syncState.auto
+    auto: syncState.auto,
+    pullOnLoad: syncState.pullOnLoad
   }));
   updateSyncStatus(hasSyncConfig() ? 'Gereed om te syncen.' : 'Nog niet verbonden.');
 }
@@ -644,6 +651,104 @@ function scheduleAutoSync() {
   }, 1200);
 }
 
+function parseMaybeNumber(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const num = Number(value);
+  return Number.isFinite(num) ? num : value;
+}
+
+function buildAllFromSheets(daysRows, setsRows) {
+  const all = {};
+  const exerciseIndex = {};
+
+  (daysRows || []).forEach(row => {
+    const date = row[0];
+    if (!date) return;
+    const sessionName = row[1] || '';
+    all[date] = { sessionName, exercises: [] };
+  });
+
+  (setsRows || []).forEach(row => {
+    const date = row[0];
+    if (!date) return;
+    const sessionName = row[1] || '';
+    const exerciseName = (row[2] || '').trim() || 'Oefening';
+    const setNumber = Number(row[3]) || 0;
+    const reps = parseMaybeNumber(row[4]);
+    const weight = parseMaybeNumber(row[5]);
+    const rpe = parseMaybeNumber(row[6]);
+    const doneRaw = row[7];
+    const notes = row[8] || '';
+    const done = doneRaw === true || doneRaw === 'yes' || doneRaw === 'true' || doneRaw === 1 || doneRaw === '1';
+
+    if (!all[date]) {
+      all[date] = { sessionName, exercises: [] };
+    } else if (!all[date].sessionName && sessionName) {
+      all[date].sessionName = sessionName;
+    }
+
+    if (!exerciseIndex[date]) exerciseIndex[date] = {};
+    if (!exerciseIndex[date][exerciseName]) {
+      exerciseIndex[date][exerciseName] = {
+        exercise: { id: uid(), name: exerciseName, notes: '', sets: [] },
+        sets: []
+      };
+    }
+
+    const entry = exerciseIndex[date][exerciseName];
+    if (!entry.exercise.notes && notes) entry.exercise.notes = notes;
+
+    entry.sets.push({
+      order: setNumber,
+      set: { id: uid(), reps, weight, rpe, done }
+    });
+  });
+
+  Object.keys(exerciseIndex).forEach(date => {
+    const day = all[date] || { sessionName: '', exercises: [] };
+    const exercises = Object.values(exerciseIndex[date]).map(entry => {
+      const sets = entry.sets
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map(item => item.set);
+      return { ...entry.exercise, sets };
+    });
+    day.exercises = exercises;
+    all[date] = day;
+  });
+
+  return all;
+}
+
+async function pullAllFromSheets(options = {}) {
+  if (!hasSyncConfig()) {
+    updateSyncStatus('Vul eerst URL en Sheet ID in.');
+    return;
+  }
+
+  const silent = !!options.silent;
+  const confirmOverwrite = options.confirmOverwrite !== false;
+  if (!silent && confirmOverwrite) {
+    const proceed = confirm('Dit overschrijft je lokale data met de data uit Google Sheets. Doorgaan?');
+    if (!proceed) return;
+  }
+
+  updateSyncStatus('Ophalen...');
+  const result = await postSync({
+    action: 'pullAll',
+    sheetId: syncState.sheetId,
+    token: syncState.token
+  });
+
+  if (!result.ok) return;
+
+  const all = buildAllFromSheets(result.data?.days || [], result.data?.sets || []);
+  saveAll(all);
+  loadDay(state.date);
+  renderExercises();
+  refreshProgress();
+  updateSyncStatus('Data opgehaald.');
+}
+
 
 addExerciseBtn.addEventListener('click', addExercise);
 addExerciseMiniBtn.addEventListener('click', addExercise);
@@ -707,6 +812,9 @@ syncAutoInput.addEventListener('change', () => {
   saveSyncConfig();
   scheduleAutoSync();
 });
+syncAutoPullInput.addEventListener('change', () => {
+  saveSyncConfig();
+});
 
 syncNowBtn.addEventListener('click', () => {
   saveSyncConfig();
@@ -716,6 +824,11 @@ syncNowBtn.addEventListener('click', () => {
 syncAllBtn.addEventListener('click', () => {
   saveSyncConfig();
   syncAll();
+});
+
+syncPullBtn.addEventListener('click', () => {
+  saveSyncConfig();
+  pullAllFromSheets();
 });
 
 syncTestBtn.addEventListener('click', () => {
@@ -737,6 +850,9 @@ function init() {
   loadDay(today);
   renderExercises();
   refreshProgress();
+  if (syncState.pullOnLoad && hasSyncConfig()) {
+    pullAllFromSheets({ silent: true, confirmOverwrite: false });
+  }
 }
 
 init();

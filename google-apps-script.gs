@@ -24,6 +24,12 @@ function doPost(e) {
       return json_({ ok: true });
     }
 
+    if (data.action === 'pullAll') {
+      const days = fetchRows_(daysSheet);
+      const sets = fetchRows_(setsSheet);
+      return json_({ ok: true, days, sets });
+    }
+
     if (data.action === 'syncAll') {
       handleSyncAll_(daysSheet, setsSheet, data.days || []);
       return json_({ ok: true });
@@ -98,6 +104,12 @@ function appendRows_(sheet, rows) {
   if (!rows || !rows.length) return;
   const startRow = sheet.getLastRow() + 1;
   sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+}
+
+function fetchRows_(sheet) {
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return [];
+  return values.slice(1);
 }
 
 function json_(obj) {
