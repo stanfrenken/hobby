@@ -19,6 +19,7 @@ const dayProgressChart = document.getElementById('dayProgressChart');
 const dayProgressTable = document.getElementById('dayProgressTable');
 const dayProgressMetrics = document.getElementById('dayProgressMetrics');
 const exerciseProgressMetrics = document.getElementById('exerciseProgressMetrics');
+const exerciseStartNow = document.getElementById('exerciseStartNow');
 const exportBtn = document.getElementById('exportData');
 const importInput = document.getElementById('importData');
 const syncUrlInput = document.getElementById('syncUrl');
@@ -392,6 +393,7 @@ function refreshProgress() {
     progressExercise.appendChild(opt);
     renderProgressTable([], progressTable, 'Log een oefening om progress te zien.');
     renderMetrics(exerciseProgressMetrics, []);
+    renderStartNow(exerciseStartNow, []);
     drawChart(progressChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
     return;
   }
@@ -425,6 +427,11 @@ function formatMetricValue(point) {
   const volume = formatNumber(point.volume);
   const best = point.best || '-';
   return `${date} • Vol ${volume} • ${best}`;
+}
+
+function formatWeightValue(value) {
+  if (!value || value <= 0) return '-';
+  return `${formatNumber(value)} kg`;
 }
 
 function getPointAtOrBefore(points, targetDate) {
@@ -464,6 +471,46 @@ function buildMetrics(points) {
   return metrics;
 }
 
+function buildPRAnnotations(points) {
+  if (!points.length) return [];
+  const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
+  let allIndex = 0;
+  let allMax = -1;
+  sorted.forEach((point, idx) => {
+    if (point.volume > allMax) {
+      allMax = point.volume;
+      allIndex = idx;
+    }
+  });
+
+  const lastDate = parseDate(sorted[sorted.length - 1].date);
+  const weekStart = lastDate ? new Date(lastDate.getTime() - 7 * 24 * 60 * 60 * 1000) : null;
+  let weekIndex = allIndex;
+  let weekMax = -1;
+  if (weekStart) {
+    sorted.forEach((point, idx) => {
+      const date = parseDate(point.date);
+      if (!date || date < weekStart) return;
+      if (point.volume > weekMax) {
+        weekMax = point.volume;
+        weekIndex = idx;
+      }
+    });
+  }
+
+  const annotations = [];
+  if (allIndex !== undefined) {
+    annotations.push({ index: allIndex, label: 'PR', color: '#c2552d' });
+  }
+  if (weekIndex !== undefined && weekIndex !== allIndex) {
+    annotations.push({ index: weekIndex, label: 'Week PR', color: '#0f6b66' });
+  } else if (weekIndex === allIndex) {
+    annotations[0].label = 'PR / Week PR';
+  }
+
+  return annotations;
+}
+
 function renderMetrics(container, metrics) {
   if (!container) return;
   container.innerHTML = '';
@@ -471,6 +518,38 @@ function renderMetrics(container, metrics) {
     const item = document.createElement('div');
     item.className = 'metric';
     item.innerHTML = `<span class="label">${metric.label}</span><span class="value">${metric.value}</span>`;
+    container.appendChild(item);
+  });
+}
+
+function renderStartNow(container, points) {
+  if (!container) return;
+  if (!points.length) {
+    renderMetrics(container, [
+      { label: 'Startgewicht', value: '-' },
+      { label: 'Huidig gewicht', value: '-' },
+      { label: 'Verschil', value: '-' }
+    ]);
+    return;
+  }
+
+  const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const startWeight = first.bestWeight || 0;
+  const lastWeight = last.bestWeight || 0;
+  const delta = lastWeight - startWeight;
+  const deltaStr = startWeight && lastWeight ? `${delta >= 0 ? '+' : ''}${formatNumber(delta)} kg` : '-';
+
+  container.innerHTML = '';
+  [
+    { label: 'Startgewicht', value: formatWeightValue(startWeight), sub: formatShortDate(first.date) },
+    { label: 'Huidig gewicht', value: formatWeightValue(lastWeight), sub: formatShortDate(last.date) },
+    { label: 'Verschil', value: deltaStr, sub: startWeight && lastWeight ? `${formatNumber(startWeight)} → ${formatNumber(lastWeight)} kg` : '-' }
+  ].forEach(metric => {
+    const item = document.createElement('div');
+    item.className = 'metric';
+    item.innerHTML = `<span class="label">${metric.label}</span><span class="value">${metric.value}</span><span class="sub">${metric.sub}</span>`;
     container.appendChild(item);
   });
 }
@@ -488,7 +567,9 @@ function collectDayTotals(all) {
       const best = findBestSet(sets);
       const bestStr = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
 
-      points.push({ date, volume, best: bestStr });
+      const bestWeight = best ? Number(best.weight) || 0 : 0;
+      const bestReps = best ? Number(best.reps) || 0 : 0;
+      points.push({ date, volume, best: bestStr, bestWeight, bestReps });
       rows.push({
         date,
         volume,
@@ -503,7 +584,13 @@ function collectDayTotals(all) {
 function renderDayProgress(all) {
   if (!dayProgressChart || !dayProgressTable) return;
   const { points, rows } = collectDayTotals(all);
-  drawChart(dayProgressChart, points, { lineColor: '#0f6b66', dotColor: '#c2552d', emptyLabel: 'Geen dagen' });
+  const dayAnnotations = buildPRAnnotations(points);
+  drawChart(dayProgressChart, points, {
+    lineColor: '#0f6b66',
+    dotColor: '#c2552d',
+    emptyLabel: 'Geen dagen',
+    annotations: dayAnnotations
+  });
   renderMetrics(dayProgressMetrics, buildMetrics(points));
   renderProgressTable(rows.slice(-6).reverse(), dayProgressTable, 'Log dagen om progress te zien.');
 }
@@ -522,8 +609,10 @@ function renderProgressFor(name, all) {
       const volume = sets.reduce((sum, set) => sum + setVolume(set), 0);
       const best = findBestSet(sets);
       const bestStr = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
+      const bestWeight = best ? Number(best.weight) || 0 : 0;
+      const bestReps = best ? Number(best.reps) || 0 : 0;
 
-      points.push({ date, volume, best: bestStr });
+      points.push({ date, volume, best: bestStr, bestWeight, bestReps });
       rows.push({
         date,
         volume,
@@ -531,8 +620,15 @@ function renderProgressFor(name, all) {
       });
     });
 
-  drawChart(progressChart, points, { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
+  const exerciseAnnotations = buildPRAnnotations(points);
+  drawChart(progressChart, points, {
+    lineColor: '#c2552d',
+    dotColor: '#0f6b66',
+    emptyLabel: 'Geen data',
+    annotations: exerciseAnnotations
+  });
   renderMetrics(exerciseProgressMetrics, buildMetrics(points));
+  renderStartNow(exerciseStartNow, points);
   renderProgressTable(rows.slice(-6).reverse(), progressTable, 'Nog geen sessies voor deze oefening.');
 }
 
@@ -561,6 +657,7 @@ function drawChart(canvas, points, options = {}) {
   const lineColor = options.lineColor || '#c2552d';
   const dotColor = options.dotColor || '#0f6b66';
   const emptyLabel = options.emptyLabel || 'Geen data';
+  const annotations = options.annotations || [];
   ctx.clearRect(0, 0, w, h);
 
   ctx.fillStyle = '#fff';
@@ -605,6 +702,24 @@ function drawChart(canvas, points, options = {}) {
     ctx.arc(x, y, 3.5, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  if (annotations.length) {
+    ctx.font = '12px Space Grotesk';
+    annotations.forEach(annotation => {
+      const idx = annotation.index;
+      if (idx < 0 || idx >= points.length) return;
+      const point = points[idx];
+      const x = padding + idx * xStep;
+      const y = h - padding - ((point.volume - minValue) / (maxValue - minValue)) * (h - padding * 2);
+      ctx.fillStyle = annotation.color || '#1a1a1a';
+      ctx.fillText(annotation.label, x + 6, y - 8);
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.strokeStyle = annotation.color || '#1a1a1a';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
 }
 
 function flashSaved() {
