@@ -55,9 +55,9 @@ const syncState = {
   autoPullIntervalId: null
 };
 
-const AUTO_PULL_INTERVAL_MS = 60000;
-const AUTO_PULL_MIN_GAP_MS = 15000;
-const AUTO_PULL_DIRTY_GRACE_MS = 4000;
+const AUTO_PULL_INTERVAL_MS = 10000;
+const AUTO_PULL_MIN_GAP_MS = 8000;
+const AUTO_PULL_DIRTY_GRACE_MS = 1500;
 
 function todayISO() {
   const now = new Date();
@@ -463,11 +463,13 @@ function loadSyncConfig() {
     }
   }
 
+  syncState.pullOnLoad = true;
   syncUrlInput.value = syncState.url;
   syncSheetIdInput.value = syncState.sheetId;
   syncTokenInput.value = syncState.token;
   syncAutoInput.checked = syncState.auto;
-  syncAutoPullInput.checked = syncState.pullOnLoad;
+  syncAutoPullInput.checked = true;
+  syncAutoPullInput.disabled = true;
   updateSyncStatus(hasSyncConfig() ? 'Gereed om te syncen.' : 'Nog niet verbonden.');
 }
 
@@ -481,14 +483,14 @@ function saveSyncConfig() {
   syncState.sheetId = syncSheetIdInput.value.trim();
   syncState.token = syncTokenInput.value.trim();
   syncState.auto = syncAutoInput.checked;
-  syncState.pullOnLoad = syncAutoPullInput.checked;
+  syncState.pullOnLoad = true;
   syncUrlInput.value = syncState.url;
   localStorage.setItem(SYNC_KEY, JSON.stringify({
     url: syncState.url,
     sheetId: syncState.sheetId,
     token: syncState.token,
     auto: syncState.auto,
-    pullOnLoad: syncState.pullOnLoad
+    pullOnLoad: true
   }));
   updateSyncStatus(hasSyncConfig() ? 'Gereed om te syncen.' : 'Nog niet verbonden.');
 }
