@@ -140,6 +140,11 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   gap: 24px;
 }
 
+.stack {
+  display: grid;
+  gap: 24px;
+}
+
 .panel {
   background: rgba(255, 255, 255, 0.75);
   border-radius: var(--radius);
@@ -157,6 +162,22 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 }
 
 .panel-header.spaced { margin-top: 18px; }
+
+.panel-header.compact {
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 107, 102, 0.12);
+  color: var(--accent-2);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
 
 .exercise-list { display: grid; gap: 16px; }
 
@@ -243,10 +264,18 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   color: var(--muted);
 }
 
+.empty.compact {
+  padding: 18px 16px;
+}
+
 .summary {
   display: grid;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.dashboard .summary {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .stat {
@@ -280,6 +309,30 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   font-size: 0.9rem;
 }
 
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.metric {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 10px 12px;
+}
+
+.metric .label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.metric .value {
+  font-weight: 700;
+  margin-top: 4px;
+}
+
 .progress-row {
   display: flex;
   justify-content: space-between;
@@ -287,6 +340,57 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid rgba(0,0,0,0.06);
+}
+
+.day-exercises {
+  display: grid;
+  gap: 12px;
+}
+
+.day-exercise {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.day-exercise-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.day-exercise-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.day-exercise-volume {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.set-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  background: rgba(194, 85, 45, 0.12);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.tag.muted {
+  background: rgba(15, 107, 102, 0.12);
+  color: var(--accent-2);
 }
 
 .backup {

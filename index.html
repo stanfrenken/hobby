@@ -34,46 +34,69 @@
     </header>
 
     <main class="grid">
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Oefeningen</h2>
-          <div class="mini-actions">
-            <button id="addExerciseMini" class="ghost">+ Oefening</button>
+      <div class="stack">
+        <section class="panel dashboard">
+          <div class="panel-header">
+            <h2>Vandaag</h2>
+            <div class="mini-actions">
+              <span id="dayBadge" class="badge">-</span>
+            </div>
           </div>
-        </div>
-        <div id="exerciseList" class="exercise-list"></div>
-        <div class="empty" id="emptyState">
-          <h3>Start je logboek</h3>
-          <p>Voeg je eerste oefening toe en bouw je sessie op.</p>
-          <button id="addExerciseEmpty" class="primary">Eerste oefening</button>
-        </div>
-      </section>
+          <div class="summary" id="summary">
+            <div class="stat">
+              <span class="label">Oefeningen</span>
+              <span class="value" id="statExercises">0</span>
+            </div>
+            <div class="stat">
+              <span class="label">Sets</span>
+              <span class="value" id="statSets">0</span>
+            </div>
+            <div class="stat">
+              <span class="label">Totaal volume</span>
+              <span class="value" id="statVolume">0</span>
+            </div>
+            <div class="stat">
+              <span class="label">Beste set</span>
+              <span class="value" id="statBest">-</span>
+            </div>
+          </div>
+          <div class="panel-header compact">
+            <h3>Oefeningen vandaag</h3>
+          </div>
+          <div id="dayExerciseSummary" class="day-exercises"></div>
+          <div id="dayEmpty" class="empty compact">
+            <p>Geen oefeningen ingevuld voor deze dag.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Oefeningen</h2>
+            <div class="mini-actions">
+              <button id="addExerciseMini" class="ghost">+ Oefening</button>
+            </div>
+          </div>
+          <div id="exerciseList" class="exercise-list"></div>
+          <div class="empty" id="emptyState">
+            <h3>Start je logboek</h3>
+            <p>Voeg je eerste oefening toe en bouw je sessie op.</p>
+            <button id="addExerciseEmpty" class="primary">Eerste oefening</button>
+          </div>
+        </section>
+      </div>
 
       <aside class="panel side">
         <div class="panel-header">
-          <h2>Dagoverzicht</h2>
+          <h2>Progress per dag</h2>
         </div>
-        <div class="summary" id="summary">
-          <div class="stat">
-            <span class="label">Oefeningen</span>
-            <span class="value" id="statExercises">0</span>
-          </div>
-          <div class="stat">
-            <span class="label">Sets</span>
-            <span class="value" id="statSets">0</span>
-          </div>
-          <div class="stat">
-            <span class="label">Totaal volume</span>
-            <span class="value" id="statVolume">0</span>
-          </div>
-          <div class="stat">
-            <span class="label">Beste set</span>
-            <span class="value" id="statBest">-</span>
-          </div>
+        <div class="progress">
+          <canvas id="dayProgressChart" width="360" height="170"></canvas>
+          <div id="dayProgressMetrics" class="metrics"></div>
+          <div id="dayProgressTable" class="progress-table"></div>
         </div>
 
         <div class="panel-header spaced">
-          <h2>Progress</h2>
+          <h2>Progress per oefening</h2>
         </div>
         <div class="progress">
           <label class="control">
@@ -81,6 +104,7 @@
             <select id="progressExercise"></select>
           </label>
           <canvas id="progressChart" width="360" height="180"></canvas>
+          <div id="exerciseProgressMetrics" class="metrics"></div>
           <div id="progressTable" class="progress-table"></div>
         </div>
 

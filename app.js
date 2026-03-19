@@ -12,6 +12,13 @@ const emptyState = document.getElementById('emptyState');
 const progressExercise = document.getElementById('progressExercise');
 const progressChart = document.getElementById('progressChart');
 const progressTable = document.getElementById('progressTable');
+const dayBadge = document.getElementById('dayBadge');
+const dayExerciseSummary = document.getElementById('dayExerciseSummary');
+const dayEmpty = document.getElementById('dayEmpty');
+const dayProgressChart = document.getElementById('dayProgressChart');
+const dayProgressTable = document.getElementById('dayProgressTable');
+const dayProgressMetrics = document.getElementById('dayProgressMetrics');
+const exerciseProgressMetrics = document.getElementById('exerciseProgressMetrics');
 const exportBtn = document.getElementById('exportData');
 const importInput = document.getElementById('importData');
 const syncUrlInput = document.getElementById('syncUrl');
@@ -203,6 +210,66 @@ function updateSummary() {
   statSets.textContent = totalSets;
   statVolume.textContent = formatNumber(totalVolume);
   statBest.textContent = bestSet ? `${formatNumber(bestSet.weight)} x ${bestSet.reps}` : '-';
+  if (dayBadge) dayBadge.textContent = formatLongDate(state.date);
+  renderDayExerciseSummary();
+}
+
+function formatSetTag(set) {
+  const reps = Number(set.reps);
+  const weight = Number(set.weight);
+  const hasReps = Number.isFinite(reps) && set.reps !== '';
+  const hasWeight = Number.isFinite(weight) && set.weight !== '';
+
+  if (hasReps && hasWeight) return `${reps}x${formatNumber(weight)}`;
+  if (hasReps) return `${reps} reps`;
+  if (hasWeight) return `${formatNumber(weight)} kg`;
+  return '-';
+}
+
+function renderDayExerciseSummary() {
+  if (!dayExerciseSummary) return;
+
+  dayExerciseSummary.innerHTML = '';
+  if (!state.exercises.length) {
+    if (dayEmpty) dayEmpty.style.display = 'block';
+    return;
+  }
+
+  if (dayEmpty) dayEmpty.style.display = 'none';
+
+  state.exercises.forEach(exercise => {
+    const card = document.createElement('div');
+    card.className = 'day-exercise';
+
+    const name = (exercise.name || '').trim() || 'Oefening';
+    const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set), 0);
+
+    const head = document.createElement('div');
+    head.className = 'day-exercise-head';
+    head.innerHTML = `<span class="day-exercise-name">${name}</span><span class="day-exercise-volume">${formatNumber(volume)}</span>`;
+
+    const tags = document.createElement('div');
+    tags.className = 'set-tags';
+
+    if (!exercise.sets.length) {
+      const tag = document.createElement('span');
+      tag.className = 'tag muted';
+      tag.textContent = 'Geen sets';
+      tags.appendChild(tag);
+    } else {
+      exercise.sets.forEach((set, index) => {
+        const tag = document.createElement('span');
+        const label = formatSetTag(set);
+        tag.className = set.done ? 'tag' : 'tag muted';
+        tag.textContent = `S${index + 1} ${label}`;
+        tags.appendChild(tag);
+      });
+    }
+
+    card.appendChild(head);
+    card.appendChild(tags);
+    dayExerciseSummary.appendChild(card);
+  });
 }
 
 function setVolume(set) {
@@ -226,6 +293,33 @@ function findBestSet(sets) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 1 }).format(value);
+}
+
+function parseDate(value) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatShortDate(value) {
+  const date = parseDate(value);
+  if (!date) return value || '-';
+  return new Intl.DateTimeFormat('nl-NL', {
+    day: '2-digit',
+    month: 'short',
+    year: '2-digit'
+  }).format(date);
+}
+
+function formatLongDate(value) {
+  const date = parseDate(value);
+  if (!date) return value || '-';
+  return new Intl.DateTimeFormat('nl-NL', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  }).format(date);
 }
 
 function handleInputChange(target) {
@@ -285,6 +379,8 @@ function refreshProgress() {
   const all = loadAll();
   all[state.date] = cloneState();
 
+  renderDayProgress(all);
+
   const names = collectExerciseNames(all);
   const selected = progressExercise.value;
   progressExercise.innerHTML = '';
@@ -294,8 +390,9 @@ function refreshProgress() {
     opt.textContent = 'Nog geen data';
     opt.value = '';
     progressExercise.appendChild(opt);
-    progressTable.innerHTML = '<p class="hint">Log een oefening om progress te zien.</p>';
-    drawChart([]);
+    renderProgressTable([], progressTable, 'Log een oefening om progress te zien.');
+    renderMetrics(exerciseProgressMetrics, []);
+    drawChart(progressChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
     return;
   }
 
@@ -322,6 +419,95 @@ function collectExerciseNames(all) {
   return Array.from(names).sort((a, b) => a.localeCompare(b, 'nl-NL'));
 }
 
+function formatMetricValue(point) {
+  if (!point) return '-';
+  const date = formatShortDate(point.date);
+  const volume = formatNumber(point.volume);
+  const best = point.best || '-';
+  return `${date} • Vol ${volume} • ${best}`;
+}
+
+function getPointAtOrBefore(points, targetDate) {
+  let candidate = null;
+  points.forEach(point => {
+    const date = parseDate(point.date);
+    if (!date || date > targetDate) return;
+    if (!candidate || date > parseDate(candidate.date)) {
+      candidate = point;
+    }
+  });
+  return candidate;
+}
+
+function buildMetrics(points) {
+  const metrics = [
+    { label: 'Start', value: '-' },
+    { label: 'Vorige week', value: '-' },
+    { label: 'Vorige sessie', value: '-' },
+    { label: 'Laatste', value: '-' }
+  ];
+
+  if (!points.length) return metrics;
+
+  const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+  const lastDate = parseDate(last.date);
+  const weekAgoTarget = lastDate ? new Date(lastDate.getTime() - 7 * 24 * 60 * 60 * 1000) : null;
+  const weekAgo = weekAgoTarget ? getPointAtOrBefore(sorted, weekAgoTarget) : null;
+
+  metrics[0].value = formatMetricValue(first);
+  metrics[1].value = formatMetricValue(weekAgo);
+  metrics[2].value = formatMetricValue(prev);
+  metrics[3].value = formatMetricValue(last);
+  return metrics;
+}
+
+function renderMetrics(container, metrics) {
+  if (!container) return;
+  container.innerHTML = '';
+  metrics.forEach(metric => {
+    const item = document.createElement('div');
+    item.className = 'metric';
+    item.innerHTML = `<span class="label">${metric.label}</span><span class="value">${metric.value}</span>`;
+    container.appendChild(item);
+  });
+}
+
+function collectDayTotals(all) {
+  const points = [];
+  const rows = [];
+  Object.entries(all)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([date, day]) => {
+      const exercises = day.exercises || [];
+      const sets = exercises.flatMap(ex => ex.sets || []);
+      const totalSets = sets.length;
+      const volume = sets.reduce((sum, set) => sum + setVolume(set), 0);
+      const best = findBestSet(sets);
+      const bestStr = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
+
+      points.push({ date, volume, best: bestStr });
+      rows.push({
+        date,
+        volume,
+        best: bestStr,
+        detail: `${formatNumber(volume)} - ${bestStr} • ${totalSets} sets`
+      });
+    });
+
+  return { points, rows };
+}
+
+function renderDayProgress(all) {
+  if (!dayProgressChart || !dayProgressTable) return;
+  const { points, rows } = collectDayTotals(all);
+  drawChart(dayProgressChart, points, { lineColor: '#0f6b66', dotColor: '#c2552d', emptyLabel: 'Geen dagen' });
+  renderMetrics(dayProgressMetrics, buildMetrics(points));
+  renderProgressTable(rows.slice(-6).reverse(), dayProgressTable, 'Log dagen om progress te zien.');
+}
+
 function renderProgressFor(name, all) {
   const points = [];
   const rows = [];
@@ -335,38 +521,46 @@ function renderProgressFor(name, all) {
       const sets = matches.flatMap(ex => ex.sets || []);
       const volume = sets.reduce((sum, set) => sum + setVolume(set), 0);
       const best = findBestSet(sets);
+      const bestStr = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
 
-      points.push({ date, volume });
+      points.push({ date, volume, best: bestStr });
       rows.push({
         date,
         volume,
-        best: best ? `${formatNumber(best.weight)} x ${best.reps}` : '-'
+        best: bestStr
       });
     });
 
-  drawChart(points);
-  renderProgressTable(rows.slice(-6).reverse());
+  drawChart(progressChart, points, { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
+  renderMetrics(exerciseProgressMetrics, buildMetrics(points));
+  renderProgressTable(rows.slice(-6).reverse(), progressTable, 'Nog geen sessies voor deze oefening.');
 }
 
-function renderProgressTable(rows) {
+function renderProgressTable(rows, container, emptyMessage) {
+  if (!container) return;
   if (!rows.length) {
-    progressTable.innerHTML = '<p class="hint">Nog geen sessies voor deze oefening.</p>';
+    container.innerHTML = `<p class="hint">${emptyMessage}</p>`;
     return;
   }
 
-  progressTable.innerHTML = '';
+  container.innerHTML = '';
   rows.forEach(row => {
     const el = document.createElement('div');
     el.className = 'progress-row';
-    el.innerHTML = `<span>${row.date}</span><span>${formatNumber(row.volume)} - ${row.best}</span>`;
-    progressTable.appendChild(el);
+    const detail = row.detail || `${formatNumber(row.volume)} - ${row.best}`;
+    el.innerHTML = `<span>${formatShortDate(row.date)}</span><span>${detail}</span>`;
+    container.appendChild(el);
   });
 }
 
-function drawChart(points) {
-  const ctx = progressChart.getContext('2d');
-  const w = progressChart.width;
-  const h = progressChart.height;
+function drawChart(canvas, points, options = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const lineColor = options.lineColor || '#c2552d';
+  const dotColor = options.dotColor || '#0f6b66';
+  const emptyLabel = options.emptyLabel || 'Geen data';
   ctx.clearRect(0, 0, w, h);
 
   ctx.fillStyle = '#fff';
@@ -375,7 +569,7 @@ function drawChart(points) {
   if (!points.length) {
     ctx.fillStyle = '#6a5e54';
     ctx.font = '14px Space Grotesk';
-    ctx.fillText('Geen data', 14, h / 2);
+    ctx.fillText(emptyLabel, 14, h / 2);
     return;
   }
 
@@ -392,7 +586,7 @@ function drawChart(points) {
   ctx.lineTo(w - padding, h - padding);
   ctx.stroke();
 
-  ctx.strokeStyle = '#c2552d';
+  ctx.strokeStyle = lineColor;
   ctx.lineWidth = 2;
   ctx.beginPath();
   points.forEach((point, index) => {
@@ -403,7 +597,7 @@ function drawChart(points) {
   });
   ctx.stroke();
 
-  ctx.fillStyle = '#0f6b66';
+  ctx.fillStyle = dotColor;
   points.forEach((point, index) => {
     const x = padding + index * xStep;
     const y = h - padding - ((point.volume - minValue) / (maxValue - minValue)) * (h - padding * 2);
