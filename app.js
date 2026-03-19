@@ -44,9 +44,20 @@ const syncState = {
   sheetId: '',
   token: '',
   auto: false,
-  pullOnLoad: false,
-  debounceId: null
+  pullOnLoad: true,
+  debounceId: null,
+  dirty: false,
+  lastLocalChange: 0,
+  lastChangedDate: '',
+  lastPull: 0,
+  pullInFlight: false,
+  pushInFlight: false,
+  autoPullIntervalId: null
 };
+
+const AUTO_PULL_INTERVAL_MS = 60000;
+const AUTO_PULL_MIN_GAP_MS = 15000;
+const AUTO_PULL_DIRTY_GRACE_MS = 4000;
 
 function todayISO() {
   const now = new Date();
@@ -105,6 +116,9 @@ function persist() {
   all[state.date] = cloneState();
   saveAll(all);
   refreshProgress();
+  syncState.dirty = true;
+  syncState.lastLocalChange = Date.now();
+  syncState.lastChangedDate = state.date;
   scheduleAutoSync();
 }
 
@@ -443,7 +457,7 @@ function loadSyncConfig() {
       syncState.sheetId = data.sheetId || '';
       syncState.token = data.token || '';
       syncState.auto = !!data.auto;
-      syncState.pullOnLoad = !!data.pullOnLoad;
+      syncState.pullOnLoad = data.pullOnLoad !== undefined ? !!data.pullOnLoad : true;
     } catch {
       // ignore invalid data
     }
@@ -581,27 +595,33 @@ async function postSync(payload) {
   }
 }
 
-async function syncDay() {
+async function syncDay(dateOverride, options = {}) {
   if (!hasSyncConfig()) {
     updateSyncStatus('Vul eerst URL en Sheet ID in.');
     return;
   }
 
   const all = loadAll();
-  all[state.date] = cloneState();
-  const rows = buildRowsForDay(state.date, all[state.date]);
+  const targetDate = dateOverride || state.date;
+  all[targetDate] = targetDate === state.date ? cloneState() : all[targetDate];
+  const rows = buildRowsForDay(targetDate, all[targetDate] || { sessionName: '', exercises: [] });
 
-  updateSyncStatus('Syncen...');
+  if (!options.silent) updateSyncStatus('Syncen...');
+  syncState.pushInFlight = true;
   const result = await postSync({
     action: 'syncDay',
     sheetId: syncState.sheetId,
     token: syncState.token,
-    date: state.date,
+    date: targetDate,
     rowsDays: rows.rowsDays,
     rowsSets: rows.rowsSets
   });
 
-  if (result.ok) updateSyncStatus(`Gesynct: ${state.date}`);
+  syncState.pushInFlight = false;
+  if (result.ok) {
+    syncState.dirty = false;
+    if (!options.silent) updateSyncStatus(`Gesynct: ${targetDate}`);
+  }
 }
 
 async function syncAll() {
@@ -615,14 +635,18 @@ async function syncAll() {
   const days = buildPayloadForAll(all);
 
   updateSyncStatus('Alles syncen...');
+  syncState.pushInFlight = true;
   const result = await postSync({
     action: 'syncAll',
     sheetId: syncState.sheetId,
     token: syncState.token,
     days
   });
-
-  if (result.ok) updateSyncStatus('Alles gesynct.');
+  syncState.pushInFlight = false;
+  if (result.ok) {
+    syncState.dirty = false;
+    updateSyncStatus('Alles gesynct.');
+  }
 }
 
 async function testSync() {
@@ -644,10 +668,12 @@ async function testSync() {
 function scheduleAutoSync() {
   if (!syncState.auto) return;
   if (!hasSyncConfig()) return;
+  if (syncState.pushInFlight) return;
 
   if (syncState.debounceId) clearTimeout(syncState.debounceId);
   syncState.debounceId = setTimeout(() => {
-    syncDay();
+    const targetDate = syncState.lastChangedDate || state.date;
+    syncDay(targetDate, { silent: true });
   }, 1200);
 }
 
@@ -657,19 +683,25 @@ function parseMaybeNumber(value) {
   return Number.isFinite(num) ? num : value;
 }
 
+function normalizeDateValue(value) {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).trim();
+}
+
 function buildAllFromSheets(daysRows, setsRows) {
   const all = {};
   const exerciseIndex = {};
 
   (daysRows || []).forEach(row => {
-    const date = row[0];
+    const date = normalizeDateValue(row[0]);
     if (!date) return;
     const sessionName = row[1] || '';
     all[date] = { sessionName, exercises: [] };
   });
 
   (setsRows || []).forEach(row => {
-    const date = row[0];
+    const date = normalizeDateValue(row[0]);
     if (!date) return;
     const sessionName = row[1] || '';
     const exerciseName = (row[2] || '').trim() || 'Oefening';
@@ -726,27 +758,49 @@ async function pullAllFromSheets(options = {}) {
   }
 
   const silent = !!options.silent;
+  const skipStatus = !!options.skipStatus;
   const confirmOverwrite = options.confirmOverwrite !== false;
   if (!silent && confirmOverwrite) {
     const proceed = confirm('Dit overschrijft je lokale data met de data uit Google Sheets. Doorgaan?');
     if (!proceed) return;
   }
 
-  updateSyncStatus('Ophalen...');
+  if (!skipStatus) updateSyncStatus('Ophalen...');
+  syncState.pullInFlight = true;
   const result = await postSync({
     action: 'pullAll',
     sheetId: syncState.sheetId,
     token: syncState.token
   });
 
+  syncState.pullInFlight = false;
   if (!result.ok) return;
 
   const all = buildAllFromSheets(result.data?.days || [], result.data?.sets || []);
   saveAll(all);
+  syncState.dirty = false;
   loadDay(state.date);
   renderExercises();
   refreshProgress();
-  updateSyncStatus('Data opgehaald.');
+  syncState.lastPull = Date.now();
+  if (!skipStatus) updateSyncStatus('Data opgehaald.');
+}
+
+async function maybeAutoPull(reason) {
+  if (!syncState.pullOnLoad) return;
+  if (!hasSyncConfig()) return;
+  if (syncState.pullInFlight || syncState.pushInFlight) return;
+
+  const now = Date.now();
+  if (reason === 'interval' && now - syncState.lastPull < AUTO_PULL_MIN_GAP_MS) return;
+  if (syncState.dirty && now - syncState.lastLocalChange < AUTO_PULL_DIRTY_GRACE_MS) return;
+
+  if (syncState.dirty) {
+    const targetDate = syncState.lastChangedDate || state.date;
+    await syncDay(targetDate, { silent: true });
+  }
+
+  await pullAllFromSheets({ silent: true, confirmOverwrite: false, skipStatus: true });
 }
 
 
@@ -814,6 +868,7 @@ syncAutoInput.addEventListener('change', () => {
 });
 syncAutoPullInput.addEventListener('change', () => {
   saveSyncConfig();
+  maybeAutoPull('toggle');
 });
 
 syncNowBtn.addEventListener('click', () => {
@@ -850,9 +905,16 @@ function init() {
   loadDay(today);
   renderExercises();
   refreshProgress();
-  if (syncState.pullOnLoad && hasSyncConfig()) {
-    pullAllFromSheets({ silent: true, confirmOverwrite: false });
+  maybeAutoPull('init');
+  if (!syncState.autoPullIntervalId) {
+    syncState.autoPullIntervalId = setInterval(() => {
+      maybeAutoPull('interval');
+    }, AUTO_PULL_INTERVAL_MS);
   }
+  window.addEventListener('focus', () => maybeAutoPull('focus'));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) maybeAutoPull('visibility');
+  });
 }
 
 init();
