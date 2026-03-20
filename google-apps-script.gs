@@ -2,7 +2,7 @@
 const SHEET_SETS = 'Sets';
 
 const DAYS_HEADERS = ['Date', 'Session', 'Exercises', 'Sets', 'Total Volume', 'Best Set'];
-const SETS_HEADERS = ['Date', 'Session', 'Exercise', 'Primary Muscle', 'Secondary Muscle', 'Set', 'Reps', 'Weight', 'RPE', 'Done', 'Notes', 'Volume'];
+const SETS_HEADERS = ['Date', 'Session', 'Exercise', 'Exercise ID', 'Primary Muscle', 'Secondary Muscle', 'Set', 'Reps', 'Weight', 'RPE', 'Done', 'Notes', 'Volume'];
 
 function doPost(e) {
   try {
@@ -96,8 +96,9 @@ function resetSheet_(sheet, headers) {
 
 function deleteRowsByDate_(sheet, date) {
   const values = sheet.getDataRange().getValues();
+  const target = normalizeDate_(date);
   for (let i = values.length - 1; i >= 1; i--) {
-    if (values[i][0] === date) {
+    if (normalizeDate_(values[i][0]) === target) {
       sheet.deleteRow(i + 1);
     }
   }
@@ -113,6 +114,19 @@ function fetchRows_(sheet) {
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) return [];
   return values.slice(1);
+}
+
+function normalizeDate_(value) {
+  if (!value) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  const raw = String(value).trim();
+  if (raw.indexOf('T') > -1) {
+    const date = new Date(raw);
+    if (!isNaN(date.getTime())) return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return raw.slice(0, 10);
 }
 
 function json_(obj) {

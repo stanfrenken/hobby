@@ -1137,6 +1137,7 @@ function buildRowsForDay(date, day) {
         date,
         day.sessionName || '',
         exerciseName,
+        exercise.id || '',
         primary,
         secondary,
         index + 1,
@@ -1316,16 +1317,26 @@ function buildAllFromSheets(daysRows, setsRows) {
     if (!date) return;
     const sessionName = row[1] || '';
     const exerciseName = (row[2] || '').trim() || 'Oefening';
+    const hasExerciseId = row.length >= 13;
     const hasMuscleColumns = row.length >= 12;
-    const primary = hasMuscleColumns ? sanitizeMuscleGroup(row[3]) : '';
-    const secondary = hasMuscleColumns ? sanitizeMuscleGroup(row[4]) : '';
-    const offset = hasMuscleColumns ? 2 : 0;
-    const setNumber = Number(row[3 + offset]) || 0;
-    const reps = parseMaybeNumber(row[4 + offset]);
-    const weight = parseMaybeNumber(row[5 + offset]);
-    const rpe = parseMaybeNumber(row[6 + offset]);
-    const doneRaw = row[7 + offset];
-    const notes = row[8 + offset] || '';
+    const exerciseId = hasExerciseId ? String(row[3] || '').trim() : '';
+    const primary = hasExerciseId
+      ? sanitizeMuscleGroup(row[4])
+      : hasMuscleColumns
+        ? sanitizeMuscleGroup(row[3])
+        : '';
+    const secondary = hasExerciseId
+      ? sanitizeMuscleGroup(row[5])
+      : hasMuscleColumns
+        ? sanitizeMuscleGroup(row[4])
+        : '';
+    const setIndex = hasExerciseId ? 6 : hasMuscleColumns ? 5 : 3;
+    const setNumber = Number(row[setIndex]) || 0;
+    const reps = parseMaybeNumber(row[setIndex + 1]);
+    const weight = parseMaybeNumber(row[setIndex + 2]);
+    const rpe = parseMaybeNumber(row[setIndex + 3]);
+    const doneRaw = row[setIndex + 4];
+    const notes = row[setIndex + 5] || '';
     const done = doneRaw === true || doneRaw === 'yes' || doneRaw === 'true' || doneRaw === 1 || doneRaw === '1';
 
     if (!all[date]) {
@@ -1335,10 +1346,12 @@ function buildAllFromSheets(daysRows, setsRows) {
     }
 
     if (!exerciseIndex[date]) exerciseIndex[date] = {};
-    if (!exerciseIndex[date][exerciseName]) {
-      exerciseIndex[date][exerciseName] = {
+    const fallbackKey = `${exerciseName}::${primary}::${secondary}`;
+    const exerciseKey = exerciseId || fallbackKey;
+    if (!exerciseIndex[date][exerciseKey]) {
+      exerciseIndex[date][exerciseKey] = {
         exercise: {
-          id: uid(),
+          id: exerciseId || uid(),
           name: exerciseName,
           notes: '',
           primaryGroup: primary,
@@ -1349,7 +1362,7 @@ function buildAllFromSheets(daysRows, setsRows) {
       };
     }
 
-    const entry = exerciseIndex[date][exerciseName];
+    const entry = exerciseIndex[date][exerciseKey];
     if (!entry.exercise.primaryGroup && primary) entry.exercise.primaryGroup = primary;
     if (!entry.exercise.secondaryGroup && secondary) entry.exercise.secondaryGroup = secondary;
     if (!entry.exercise.notes && notes) entry.exercise.notes = notes;
@@ -1414,6 +1427,7 @@ async function maybeAutoPull(reason) {
   if (!syncState.pullOnLoad) return;
   if (!hasSyncConfig()) return;
   if (syncState.pullInFlight || syncState.pushInFlight) return;
+  if (document.activeElement && exerciseList.contains(document.activeElement)) return;
 
   const now = Date.now();
   if (reason === 'interval' && now - syncState.lastPull < AUTO_PULL_MIN_GAP_MS) return;
