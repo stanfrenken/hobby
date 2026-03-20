@@ -207,6 +207,13 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   gap: 8px;
 }
 
+.exercise-name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
 .exercise-select {
   width: 100%;
   padding: 10px 12px;
@@ -261,6 +268,29 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .exercise-stats .label { color: var(--muted); font-size: 0.85rem; }
 
 .exercise-stats .value { font-weight: 700; font-size: 1.05rem; }
+
+.quick-builder {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(15, 107, 102, 0.06);
+  border: 1px solid rgba(15, 107, 102, 0.12);
+}
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quick-control span {
+  font-size: 0.78rem;
+}
+
+.quick-control input {
+  width: 100%;
+}
 
 .sets-head, .set-row {
   display: grid;
@@ -606,4 +636,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .exercise-meta { grid-template-columns: 1fr; }
   .muscle-grid { grid-template-columns: 1fr; }
   .exercise-actions { flex-wrap: wrap; }
+  .exercise-head { grid-template-columns: 1fr; display: grid; }
+  .exercise-name-row { grid-template-columns: 1fr; }
+  .quick-grid { grid-template-columns: 1fr 1fr; }
 }

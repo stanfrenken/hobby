@@ -1,5 +1,6 @@
 ﻿const STORAGE_KEY = 'fitnessLog.v1';
 const SYNC_KEY = 'fitnessLog.sync.v1';
+const EXERCISE_LIBRARY_KEY = 'fitnessLog.exerciseLibrary.v1';
 
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
@@ -101,6 +102,28 @@ function loadAll() {
 
 function saveAll(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function loadCustomExerciseLibrary() {
+  const raw = localStorage.getItem(EXERCISE_LIBRARY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(item => ({
+        name: String(item?.name || '').trim(),
+        primary: sanitizeMuscleGroup(item?.primary) || '',
+        secondary: sanitizeMuscleGroup(item?.secondary) || ''
+      }))
+      .filter(item => item.name);
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomExerciseLibrary(items) {
+  localStorage.setItem(EXERCISE_LIBRARY_KEY, JSON.stringify(items));
 }
 
 function normalizeAllData(data) {
@@ -293,6 +316,65 @@ function populateExerciseSelect(select, catalog, currentName) {
   select.value = exact && catalog.some(item => normalizeExerciseName(item.name) === normalizeExerciseName(currentName))
     ? exact.name
     : '';
+}
+
+function buildExerciseProfileFromExercise(exercise) {
+  const name = (exercise?.name || '').trim();
+  if (!name) return null;
+  const { primary, secondary } = resolveExerciseMuscles(exercise);
+  return { name, primary, secondary };
+}
+
+function saveExerciseProfileToLibrary(exercise) {
+  const profile = buildExerciseProfileFromExercise(exercise);
+  if (!profile) return false;
+
+  const key = normalizeExerciseName(profile.name);
+  const library = loadCustomExerciseLibrary()
+    .filter(item => normalizeExerciseName(item.name) !== key);
+
+  library.push(profile);
+  library.sort((a, b) => a.name.localeCompare(b.name, 'nl-NL'));
+  saveCustomExerciseLibrary(library);
+  return true;
+}
+
+function isBlankSet(set) {
+  return !set
+    || ((set.reps ?? '') === ''
+      && (set.weight ?? '') === ''
+      && (set.rpe ?? '') === ''
+      && !set.done);
+}
+
+function applyQuickSetBuilder(exId, card) {
+  const exercise = state.exercises.find(ex => ex.id === exId);
+  if (!exercise || !card) return;
+
+  const count = Number(card.querySelector('.quick-set-count')?.value || 0);
+  const reps = card.querySelector('.quick-set-reps')?.value ?? '';
+  const weight = card.querySelector('.quick-set-weight')?.value ?? '';
+  const rpe = card.querySelector('.quick-set-rpe')?.value ?? '';
+
+  if (!Number.isFinite(count) || count < 1) {
+    alert('Vul eerst in hoeveel sets je wilt maken.');
+    return;
+  }
+
+  if (`${reps}` === '' && `${weight}` === '' && `${rpe}` === '') {
+    alert('Vul minstens reps, gewicht of RPE in voor je sets.');
+    return;
+  }
+
+  const generatedSets = Array.from({ length: count }, () => newSet({ reps, weight, rpe }));
+  const replaceBlankStarter = exercise.sets.length === 1 && isBlankSet(exercise.sets[0]);
+
+  exercise.sets = replaceBlankStarter
+    ? generatedSets
+    : [...exercise.sets, ...generatedSets];
+
+  renderExercises();
+  persist();
 }
 
 function renderExercises() {
@@ -547,6 +629,12 @@ function formatLongDate(value) {
 function handleInputChange(target) {
   const card = target.closest('.exercise-card');
   if (!card) return;
+  if (
+    target.classList.contains('quick-set-count')
+    || target.classList.contains('quick-set-reps')
+    || target.classList.contains('quick-set-weight')
+    || target.classList.contains('quick-set-rpe')
+  ) return;
   const exId = card.dataset.id;
   const exercise = state.exercises.find(ex => ex.id === exId);
   if (!exercise) return;
@@ -906,6 +994,10 @@ function getExerciseCatalog(all) {
   const byName = new Map();
 
   EXERCISE_LIBRARY.forEach(item => {
+    byName.set(normalizeExerciseName(item.name), { ...item });
+  });
+
+  loadCustomExerciseLibrary().forEach(item => {
     byName.set(normalizeExerciseName(item.name), { ...item });
   });
 
@@ -1348,6 +1440,15 @@ function renderProgressTable(rows, container, emptyMessage) {
     el.innerHTML = `<span>${formatShortDate(row.date)}</span><span>${detail}</span>`;
     container.appendChild(el);
   });
+}
+
+function flashButtonLabel(button, label, duration = 900) {
+  if (!button) return;
+  const original = button.textContent;
+  button.textContent = label;
+  window.setTimeout(() => {
+    button.textContent = original;
+  }, duration);
 }
 
 function drawChart(canvas, points, options = {}) {
@@ -1959,6 +2060,25 @@ exerciseList.addEventListener('click', event => {
   const exId = card.dataset.id;
   if (exId) setActiveExercise(exId);
 
+  if (event.target.classList.contains('save-custom-exercise')) {
+    const exercise = state.exercises.find(ex => ex.id === exId);
+    if (!exercise || !(exercise.name || '').trim()) {
+      alert('Geef eerst een naam aan je oefening.');
+      return;
+    }
+
+    const saved = saveExerciseProfileToLibrary(exercise);
+    if (saved) {
+      const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+      document.querySelectorAll('.exercise-card').forEach(currentCard => {
+        const select = currentCard.querySelector('.exercise-select');
+        const currentExercise = state.exercises.find(ex => ex.id === currentCard.dataset.id);
+        populateExerciseSelect(select, catalog, currentExercise?.name || '');
+      });
+      flashButtonLabel(event.target, 'Bewaard');
+    }
+  }
+
   if (event.target.classList.contains('add-set')) {
     addSet(exId);
   }
@@ -1972,6 +2092,10 @@ exerciseList.addEventListener('click', event => {
   if (event.target.classList.contains('remove-set')) {
     const row = event.target.closest('.set-row');
     if (row) removeSet(exId, row.dataset.id);
+  }
+
+  if (event.target.classList.contains('apply-quick-sets')) {
+    applyQuickSetBuilder(exId, card);
   }
 
   if (event.target.classList.contains('remove-exercise')) {

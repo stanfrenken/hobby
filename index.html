@@ -172,7 +172,10 @@
           <select class="exercise-select">
             <option value="">Kies oefening uit lijst</option>
           </select>
-          <input class="exercise-name" type="text" placeholder="Of typ een oefening (bijv. Squat)" />
+          <div class="exercise-name-row">
+            <input class="exercise-name" type="text" placeholder="Of typ een oefening (bijv. Squat)" />
+            <button class="ghost small save-custom-exercise" type="button">Bewaar in lijst</button>
+          </div>
         </div>
         <div class="exercise-actions">
           <button class="ghost small add-set">+ Set</button>
@@ -204,6 +207,27 @@
             <span class="value best">-</span>
           </div>
         </div>
+      </div>
+      <div class="quick-builder">
+        <div class="quick-grid">
+          <label class="control quick-control">
+            <span>Sets</span>
+            <input class="quick-set-count" type="number" min="1" step="1" placeholder="4" />
+          </label>
+          <label class="control quick-control">
+            <span>Reps</span>
+            <input class="quick-set-reps" type="number" min="0" step="1" placeholder="10" />
+          </label>
+          <label class="control quick-control">
+            <span>Gewicht</span>
+            <input class="quick-set-weight" type="number" min="0" step="0.5" placeholder="8" />
+          </label>
+          <label class="control quick-control">
+            <span>RPE</span>
+            <input class="quick-set-rpe" type="number" min="0" max="10" step="0.5" placeholder="" />
+          </label>
+        </div>
+        <button class="ghost small apply-quick-sets" type="button">Maak identieke sets</button>
       </div>
       <div class="sets">
         <div class="sets-head">
