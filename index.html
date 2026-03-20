@@ -96,17 +96,15 @@
         </div>
 
         <div class="panel-header spaced">
-          <h2>Progress per oefening</h2>
+          <h2>Oefening focus</h2>
+          <span id="focusName" class="badge">-</span>
         </div>
         <div class="progress">
-          <label class="control">
-            <span>Oefening</span>
-            <select id="progressExercise"></select>
-          </label>
-          <canvas id="progressChart" width="360" height="180"></canvas>
-          <div id="exerciseProgressMetrics" class="metrics"></div>
-          <div id="exerciseStartNow" class="metrics"></div>
-          <div id="progressTable" class="progress-table"></div>
+          <canvas id="focusChart" width="360" height="180"></canvas>
+          <div id="focusMetrics" class="metrics"></div>
+          <div id="focusStartNow" class="metrics"></div>
+          <div id="focusTable" class="progress-table"></div>
+          <p id="focusEmpty" class="hint">Klik op een oefening om progress te zien.</p>
         </div>
 
         <div class="panel-header spaced">

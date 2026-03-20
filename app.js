@@ -9,17 +9,18 @@ const addExerciseEmptyBtn = document.getElementById('addExerciseEmpty');
 const saveDayBtn = document.getElementById('saveDay');
 const exerciseList = document.getElementById('exerciseList');
 const emptyState = document.getElementById('emptyState');
-const progressExercise = document.getElementById('progressExercise');
-const progressChart = document.getElementById('progressChart');
-const progressTable = document.getElementById('progressTable');
 const dayBadge = document.getElementById('dayBadge');
 const dayExerciseSummary = document.getElementById('dayExerciseSummary');
 const dayEmpty = document.getElementById('dayEmpty');
 const dayProgressChart = document.getElementById('dayProgressChart');
 const dayProgressTable = document.getElementById('dayProgressTable');
 const dayProgressMetrics = document.getElementById('dayProgressMetrics');
-const exerciseProgressMetrics = document.getElementById('exerciseProgressMetrics');
-const exerciseStartNow = document.getElementById('exerciseStartNow');
+const focusName = document.getElementById('focusName');
+const focusChart = document.getElementById('focusChart');
+const focusMetrics = document.getElementById('focusMetrics');
+const focusStartNow = document.getElementById('focusStartNow');
+const focusTable = document.getElementById('focusTable');
+const focusEmpty = document.getElementById('focusEmpty');
 const exportBtn = document.getElementById('exportData');
 const importInput = document.getElementById('importData');
 const syncUrlInput = document.getElementById('syncUrl');
@@ -131,12 +132,14 @@ function persist() {
 }
 
 function addExercise() {
-  state.exercises.push({
+  const exercise = {
     id: uid(),
     name: '',
     notes: '',
     sets: [newSet()]
-  });
+  };
+  state.exercises.push(exercise);
+  activeExerciseId = exercise.id;
   renderExercises();
   persist();
 }
@@ -153,6 +156,7 @@ function newSet(seed) {
 
 function renderExercises() {
   exerciseList.innerHTML = '';
+  ensureActiveExercise();
 
   if (!state.exercises.length) {
     emptyState.style.display = 'block';
@@ -163,6 +167,7 @@ function renderExercises() {
   state.exercises.forEach(exercise => {
     const card = exerciseTemplate.content.firstElementChild.cloneNode(true);
     card.dataset.id = exercise.id;
+    if (exercise.id === activeExerciseId) card.classList.add('active');
 
     const nameInput = card.querySelector('.exercise-name');
     const notesInput = card.querySelector('.exercise-notes');
@@ -371,7 +376,11 @@ function removeSet(exId, setId) {
 }
 
 function removeExercise(exId) {
+  const removedActive = exId === activeExerciseId;
   state.exercises = state.exercises.filter(ex => ex.id !== exId);
+  if (removedActive) {
+    activeExerciseId = state.exercises[0]?.id || null;
+  }
   renderExercises();
   persist();
 }
@@ -381,33 +390,7 @@ function refreshProgress() {
   all[state.date] = cloneState();
 
   renderDayProgress(all);
-
-  const names = collectExerciseNames(all);
-  const selected = progressExercise.value;
-  progressExercise.innerHTML = '';
-
-  if (!names.length) {
-    const opt = document.createElement('option');
-    opt.textContent = 'Nog geen data';
-    opt.value = '';
-    progressExercise.appendChild(opt);
-    renderProgressTable([], progressTable, 'Log een oefening om progress te zien.');
-    renderMetrics(exerciseProgressMetrics, []);
-    renderStartNow(exerciseStartNow, []);
-    drawChart(progressChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
-    return;
-  }
-
-  names.forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    progressExercise.appendChild(opt);
-  });
-
-  const nextValue = names.includes(selected) ? selected : names[0];
-  progressExercise.value = nextValue;
-  renderProgressFor(nextValue, all);
+  renderExerciseFocus(all);
 }
 
 function collectExerciseNames(all) {
@@ -595,7 +578,32 @@ function renderDayProgress(all) {
   renderProgressTable(rows.slice(-6).reverse(), dayProgressTable, 'Log dagen om progress te zien.');
 }
 
-function renderProgressFor(name, all) {
+let activeExerciseId = null;
+
+function ensureActiveExercise() {
+  if (!state.exercises.length) {
+    activeExerciseId = null;
+    return;
+  }
+
+  const exists = state.exercises.some(ex => ex.id === activeExerciseId);
+  if (!exists) {
+    activeExerciseId = state.exercises[0].id;
+  }
+}
+
+function setActiveExercise(exerciseId) {
+  if (!exerciseId || exerciseId === activeExerciseId) return;
+  activeExerciseId = exerciseId;
+  document.querySelectorAll('.exercise-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.id === exerciseId);
+  });
+  const all = loadAll();
+  all[state.date] = cloneState();
+  renderExerciseFocus(all);
+}
+
+function buildExerciseProgress(name, all) {
   const points = [];
   const rows = [];
 
@@ -616,20 +624,58 @@ function renderProgressFor(name, all) {
       rows.push({
         date,
         volume,
-        best: bestStr
+        best: bestStr,
+        detail: `${formatNumber(volume)} - ${bestStr} • ${sets.length} sets`
       });
     });
 
-  const exerciseAnnotations = buildPRAnnotations(points);
-  drawChart(progressChart, points, {
+  return { points, rows };
+}
+
+function renderExerciseFocus(all) {
+  if (!focusChart || !focusTable || !focusMetrics) return;
+
+  ensureActiveExercise();
+  const active = state.exercises.find(ex => ex.id === activeExerciseId);
+  if (!active) {
+    if (focusName) focusName.textContent = '-';
+    if (focusEmpty) focusEmpty.style.display = 'block';
+    drawChart(focusChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
+    renderMetrics(focusMetrics, buildMetrics([]));
+    renderStartNow(focusStartNow, []);
+    renderProgressTable([], focusTable, 'Geen oefeningen gelogd.');
+    return;
+  }
+
+  const name = (active.name || '').trim();
+  if (!name) {
+    if (focusName) focusName.textContent = 'Oefening';
+    if (focusEmpty) {
+      focusEmpty.textContent = 'Geef deze oefening een naam om progress te zien.';
+      focusEmpty.style.display = 'block';
+    }
+    drawChart(focusChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
+    renderMetrics(focusMetrics, buildMetrics([]));
+    renderStartNow(focusStartNow, []);
+    renderProgressTable([], focusTable, 'Nog geen sessies voor deze oefening.');
+    return;
+  }
+
+  if (focusName) focusName.textContent = name;
+  if (focusEmpty) focusEmpty.style.display = 'none';
+
+  const { points, rows } = buildExerciseProgress(name, all);
+  const annotations = buildPRAnnotations(points);
+
+  drawChart(focusChart, points, {
     lineColor: '#c2552d',
     dotColor: '#0f6b66',
     emptyLabel: 'Geen data',
-    annotations: exerciseAnnotations
+    annotations
   });
-  renderMetrics(exerciseProgressMetrics, buildMetrics(points));
-  renderStartNow(exerciseStartNow, points);
-  renderProgressTable(rows.slice(-6).reverse(), progressTable, 'Nog geen sessies voor deze oefening.');
+  renderMetrics(focusMetrics, buildMetrics(points));
+  renderStartNow(focusStartNow, points);
+  renderProgressTable(rows.slice(-6).reverse(), focusTable, 'Nog geen sessies voor deze oefening.');
 }
 
 function renderProgressTable(rows, container, emptyMessage) {
@@ -1136,6 +1182,7 @@ exerciseList.addEventListener('click', event => {
   const card = event.target.closest('.exercise-card');
   if (!card) return;
   const exId = card.dataset.id;
+  if (exId) setActiveExercise(exId);
 
   if (event.target.classList.contains('add-set')) {
     addSet(exId);
@@ -1155,12 +1202,6 @@ exerciseList.addEventListener('click', event => {
   if (event.target.classList.contains('remove-exercise')) {
     removeExercise(exId);
   }
-});
-
-progressExercise.addEventListener('change', () => {
-  const all = loadAll();
-  all[state.date] = cloneState();
-  renderProgressFor(progressExercise.value, all);
 });
 
 exportBtn.addEventListener('click', exportData);

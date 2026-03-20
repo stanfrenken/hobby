@@ -190,6 +190,11 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   gap: 14px;
 }
 
+.exercise-card.active {
+  border-color: rgba(194, 85, 45, 0.6);
+  box-shadow: 0 12px 30px rgba(194, 85, 45, 0.18);
+}
+
 .exercise-head {
   display: flex;
   justify-content: space-between;
