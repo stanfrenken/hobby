@@ -1451,6 +1451,24 @@ function buildAllFromSheets(daysRows, setsRows) {
   return all;
 }
 
+function shouldProtectLocalDay() {
+  const focusedInsideExercises = !!(document.activeElement && exerciseList.contains(document.activeElement));
+  const recentlyEdited = Date.now() - syncState.lastLocalChange < 30000;
+  return focusedInsideExercises || recentlyEdited || syncState.dirty;
+}
+
+function mergeCurrentLocalDayIntoAll(all) {
+  if (!state.date || !shouldProtectLocalDay()) return all;
+
+  const localDay = cloneState();
+  all[state.date] = {
+    sessionName: localDay.sessionName || '',
+    exercises: localDay.exercises
+  };
+
+  return all;
+}
+
 async function pullAllFromSheets(options = {}) {
   if (!hasSyncConfig()) {
     updateSyncStatus('Vul eerst URL en Sheet ID in.');
@@ -1476,7 +1494,7 @@ async function pullAllFromSheets(options = {}) {
   syncState.pullInFlight = false;
   if (!result.ok) return;
 
-  const all = buildAllFromSheets(result.data?.days || [], result.data?.sets || []);
+  const all = mergeCurrentLocalDayIntoAll(buildAllFromSheets(result.data?.days || [], result.data?.sets || []));
   saveAll(all);
   syncState.dirty = false;
   loadDay(state.date);
