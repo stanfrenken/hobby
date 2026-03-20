@@ -1301,9 +1301,72 @@ function normalizeDateValue(value) {
   return raw;
 }
 
+function isLikelyExerciseId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (PRIMARY_GROUPS.includes(raw)) return false;
+  if (!raw.includes('-')) return false;
+  return /^[a-z0-9-]+$/i.test(raw);
+}
+
+function parseSetRow(rawRow) {
+  const row = Array.isArray(rawRow) ? rawRow : [];
+
+  const col3 = String(row[3] || '').trim();
+  const col4 = String(row[4] || '').trim();
+  const col5 = Number(row[5]);
+
+  const looksLikeV13 = row.length >= 13 && isLikelyExerciseId(col3);
+  const looksLikeV12 = row.length >= 12
+    && (col3 === '' || PRIMARY_GROUPS.includes(col3))
+    && (col4 === '' || PRIMARY_GROUPS.includes(col4))
+    && Number.isFinite(col5);
+
+  if (looksLikeV13) {
+    return {
+      exerciseId: col3,
+      primary: sanitizeMuscleGroup(row[4]),
+      secondary: sanitizeMuscleGroup(row[5]),
+      setNumber: Number(row[6]) || 0,
+      reps: parseMaybeNumber(row[7]),
+      weight: parseMaybeNumber(row[8]),
+      rpe: parseMaybeNumber(row[9]),
+      doneRaw: row[10],
+      notes: row[11] || ''
+    };
+  }
+
+  if (looksLikeV12) {
+    return {
+      exerciseId: '',
+      primary: sanitizeMuscleGroup(row[3]),
+      secondary: sanitizeMuscleGroup(row[4]),
+      setNumber: Number(row[5]) || 0,
+      reps: parseMaybeNumber(row[6]),
+      weight: parseMaybeNumber(row[7]),
+      rpe: parseMaybeNumber(row[8]),
+      doneRaw: row[9],
+      notes: row[10] || ''
+    };
+  }
+
+  return {
+    exerciseId: '',
+    primary: '',
+    secondary: '',
+    setNumber: Number(row[3]) || 0,
+    reps: parseMaybeNumber(row[4]),
+    weight: parseMaybeNumber(row[5]),
+    rpe: parseMaybeNumber(row[6]),
+    doneRaw: row[7],
+    notes: row[8] || ''
+  };
+}
+
 function buildAllFromSheets(daysRows, setsRows) {
   const all = {};
   const exerciseIndex = {};
+  const fallbackOccurrence = {};
 
   (daysRows || []).forEach(row => {
     const date = normalizeDateValue(row[0]);
@@ -1317,26 +1380,16 @@ function buildAllFromSheets(daysRows, setsRows) {
     if (!date) return;
     const sessionName = row[1] || '';
     const exerciseName = (row[2] || '').trim() || 'Oefening';
-    const hasExerciseId = row.length >= 13;
-    const hasMuscleColumns = row.length >= 12;
-    const exerciseId = hasExerciseId ? String(row[3] || '').trim() : '';
-    const primary = hasExerciseId
-      ? sanitizeMuscleGroup(row[4])
-      : hasMuscleColumns
-        ? sanitizeMuscleGroup(row[3])
-        : '';
-    const secondary = hasExerciseId
-      ? sanitizeMuscleGroup(row[5])
-      : hasMuscleColumns
-        ? sanitizeMuscleGroup(row[4])
-        : '';
-    const setIndex = hasExerciseId ? 6 : hasMuscleColumns ? 5 : 3;
-    const setNumber = Number(row[setIndex]) || 0;
-    const reps = parseMaybeNumber(row[setIndex + 1]);
-    const weight = parseMaybeNumber(row[setIndex + 2]);
-    const rpe = parseMaybeNumber(row[setIndex + 3]);
-    const doneRaw = row[setIndex + 4];
-    const notes = row[setIndex + 5] || '';
+    const parsed = parseSetRow(row);
+    const exerciseId = parsed.exerciseId;
+    const primary = parsed.primary;
+    const secondary = parsed.secondary;
+    const setNumber = parsed.setNumber;
+    const reps = parsed.reps;
+    const weight = parsed.weight;
+    const rpe = parsed.rpe;
+    const doneRaw = parsed.doneRaw;
+    const notes = parsed.notes;
     const done = doneRaw === true || doneRaw === 'yes' || doneRaw === 'true' || doneRaw === 1 || doneRaw === '1';
 
     if (!all[date]) {
@@ -1347,7 +1400,17 @@ function buildAllFromSheets(daysRows, setsRows) {
 
     if (!exerciseIndex[date]) exerciseIndex[date] = {};
     const fallbackKey = `${exerciseName}::${primary}::${secondary}`;
-    const exerciseKey = exerciseId || fallbackKey;
+    let exerciseKey = exerciseId;
+    if (!exerciseKey) {
+      if (!fallbackOccurrence[date]) fallbackOccurrence[date] = {};
+      const state = fallbackOccurrence[date][fallbackKey] || { block: 0, lastSet: 0 };
+      if (state.lastSet > 0 && setNumber > 0 && setNumber <= state.lastSet) {
+        state.block += 1;
+      }
+      state.lastSet = setNumber > 0 ? setNumber : state.lastSet;
+      fallbackOccurrence[date][fallbackKey] = state;
+      exerciseKey = `${fallbackKey}::${state.block}`;
+    }
     if (!exerciseIndex[date][exerciseKey]) {
       exerciseIndex[date][exerciseKey] = {
         exercise: {
