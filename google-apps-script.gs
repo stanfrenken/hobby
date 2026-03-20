@@ -1,7 +1,7 @@
 ﻿const SHEET_DAYS = 'Days';
 const SHEET_SETS = 'Sets';
 
-const DAYS_HEADERS = ['Date', 'Session', 'Exercises', 'Sets', 'Total Volume', 'Best Set'];
+const DAYS_HEADERS = ['Date', 'Session', 'Exercises', 'Sets', 'Total Volume', 'Best Set', 'Bodyweight'];
 const SETS_HEADERS = ['Date', 'Session', 'Exercise', 'Exercise ID', 'Primary Muscle', 'Secondary Muscle', 'Set', 'Reps', 'Weight', 'RPE', 'Done', 'Notes', 'Volume'];
 
 function doPost(e) {

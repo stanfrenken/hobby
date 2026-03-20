@@ -4,6 +4,7 @@ const EXERCISE_LIBRARY_KEY = 'fitnessLog.exerciseLibrary.v1';
 
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
+const bodyweightInput = document.getElementById('bodyweightInput');
 const addExerciseBtn = document.getElementById('addExercise');
 const addExerciseMiniBtn = document.getElementById('addExerciseMini');
 const addExerciseEmptyBtn = document.getElementById('addExerciseEmpty');
@@ -27,6 +28,8 @@ const focusMetrics = document.getElementById('focusMetrics');
 const focusStartNow = document.getElementById('focusStartNow');
 const focusTable = document.getElementById('focusTable');
 const focusEmpty = document.getElementById('focusEmpty');
+const bodyweightChart = document.getElementById('bodyweightChart');
+const bodyweightHint = document.getElementById('bodyweightHint');
 const exportBtn = document.getElementById('exportData');
 const importInput = document.getElementById('importData');
 const syncUrlInput = document.getElementById('syncUrl');
@@ -50,6 +53,7 @@ const setRowTemplate = document.getElementById('setRowTemplate');
 const state = {
   date: '',
   sessionName: '',
+  bodyweight: '',
   exercises: []
 };
 
@@ -155,10 +159,17 @@ function normalizeAllData(data) {
     }));
 
     if (!normalized[date]) {
-      normalized[date] = { sessionName: day.sessionName || '', exercises: [] };
+      normalized[date] = {
+        sessionName: day.sessionName || '',
+        bodyweight: day.bodyweight ?? '',
+        exercises: []
+      };
     }
     if (!normalized[date].sessionName && day.sessionName) {
       normalized[date].sessionName = day.sessionName;
+    }
+    if ((normalized[date].bodyweight === '' || normalized[date].bodyweight === undefined) && day.bodyweight !== undefined) {
+      normalized[date].bodyweight = day.bodyweight;
     }
     normalized[date].exercises.push(...mappedExercises);
   });
@@ -169,6 +180,7 @@ function normalizeAllData(data) {
 function cloneState() {
   return JSON.parse(JSON.stringify({
     sessionName: state.sessionName,
+    bodyweight: state.bodyweight,
     exercises: state.exercises
   }));
 }
@@ -178,6 +190,7 @@ function loadDay(date) {
   const day = all[date];
   state.date = date;
   state.sessionName = day?.sessionName || '';
+  state.bodyweight = day?.bodyweight ?? '';
   state.exercises = (day?.exercises || []).map(ex => ({
     id: ex.id || uid(),
     name: ex.name || '',
@@ -194,6 +207,7 @@ function loadDay(date) {
   }));
 
   sessionNameInput.value = state.sessionName;
+  if (bodyweightInput) bodyweightInput.value = state.bodyweight === '' ? '' : state.bodyweight;
 }
 
 function persist() {
@@ -615,6 +629,15 @@ function formatTinyDate(value) {
   }).format(date);
 }
 
+function formatAxisDate(value) {
+  const date = parseDate(value);
+  if (!date) return value || '-';
+  return new Intl.DateTimeFormat('nl-NL', {
+    day: '2-digit',
+    month: '2-digit'
+  }).format(date);
+}
+
 function formatLongDate(value) {
   const date = parseDate(value);
   if (!date) return value || '-';
@@ -722,6 +745,7 @@ function refreshProgress() {
   renderWeekCharts(all);
   updateFocusExerciseSelector(all);
   renderExerciseFocus(all);
+  renderBodyweightTrend(all);
 }
 
 function collectExerciseNames(all) {
@@ -1442,6 +1466,137 @@ function renderProgressTable(rows, container, emptyMessage) {
   });
 }
 
+function getWeightAxisRange(values, ticks = 4) {
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const spread = Math.max(maxValue - minValue, 1);
+  const padding = Math.max(spread * 0.15, 0.5);
+  const roughStep = (spread + padding * 2) / ticks;
+  const stepChoices = [0.1, 0.2, 0.5, 1, 2, 5, 10];
+  const step = stepChoices.find(choice => roughStep <= choice) || Math.ceil(roughStep);
+  const min = Math.max(0, Math.floor((minValue - padding) / step) * step);
+  const max = Math.ceil((maxValue + padding) / step) * step;
+  return { min, max: max === min ? min + step : max, ticks };
+}
+
+function drawBodyweightChart(canvas, points) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const paddingLeft = 54;
+  const paddingRight = 16;
+  const paddingTop = 16;
+  const paddingBottom = 38;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+
+  if (!points.length) {
+    ctx.fillStyle = '#6a5e54';
+    ctx.font = '14px Space Grotesk';
+    ctx.fillText('Nog geen lichaamsgewicht ingevuld.', 14, h / 2);
+    return;
+  }
+
+  const values = points.map(point => point.weight);
+  const axis = getWeightAxisRange(values);
+  const chartHeight = h - paddingTop - paddingBottom;
+  const chartWidth = w - paddingLeft - paddingRight;
+  const denominator = points.length - 1 || 1;
+
+  ctx.strokeStyle = 'rgba(26,26,26,0.14)';
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.moveTo(paddingLeft, paddingTop);
+  ctx.lineTo(paddingLeft, h - paddingBottom);
+  ctx.lineTo(w - paddingRight, h - paddingBottom);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(18, h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = '700 12px Space Grotesk';
+  ctx.textAlign = 'center';
+  ctx.fillText('kg', 0, 0);
+  ctx.restore();
+
+  for (let i = 0; i <= axis.ticks; i += 1) {
+    const value = axis.min + ((axis.max - axis.min) / axis.ticks) * i;
+    const y = h - paddingBottom - ((value - axis.min) / (axis.max - axis.min)) * chartHeight;
+    ctx.strokeStyle = 'rgba(26,26,26,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(w - paddingRight, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = '600 11px Space Grotesk';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${formatNumber(value)} kg`, paddingLeft - 6, y);
+  }
+
+  ctx.strokeStyle = '#0f6b66';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    const x = points.length === 1
+      ? paddingLeft + chartWidth / 2
+      : paddingLeft + (index / denominator) * chartWidth;
+    const y = h - paddingBottom - ((point.weight - axis.min) / (axis.max - axis.min)) * chartHeight;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  points.forEach((point, index) => {
+    const x = points.length === 1
+      ? paddingLeft + chartWidth / 2
+      : paddingLeft + (index / denominator) * chartWidth;
+    const y = h - paddingBottom - ((point.weight - axis.min) / (axis.max - axis.min)) * chartHeight;
+    ctx.fillStyle = '#c2552d';
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  const labelStep = Math.max(1, Math.ceil(points.length / 6));
+  points.forEach((point, index) => {
+    if (index % labelStep !== 0 && index !== points.length - 1) return;
+    const x = points.length === 1
+      ? paddingLeft + chartWidth / 2
+      : paddingLeft + (index / denominator) * chartWidth;
+    ctx.fillStyle = '#6a5e54';
+    ctx.font = '11px Space Grotesk';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(formatAxisDate(point.date), x, h - 10);
+  });
+}
+
+function renderBodyweightTrend(all) {
+  if (!bodyweightChart) return;
+  const points = Object.entries(all)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, day]) => {
+      const raw = day?.bodyweight;
+      if (raw === '' || raw === null || raw === undefined) return null;
+      const weight = Number(raw);
+      if (!Number.isFinite(weight)) return null;
+      return { date, weight };
+    })
+    .filter(Boolean);
+
+  drawBodyweightChart(bodyweightChart, points);
+  if (bodyweightHint) {
+    bodyweightHint.style.display = points.length ? 'none' : 'block';
+  }
+}
+
 function flashButtonLabel(button, label, duration = 900) {
   if (!button) return;
   const original = button.textContent;
@@ -1621,6 +1776,8 @@ function buildRowsForDay(date, day) {
   let totalVolume = 0;
   let best = null;
   let bestVolume = -1;
+  const bodyweightValue = Number(day.bodyweight);
+  const bodyweight = Number.isFinite(bodyweightValue) && `${day.bodyweight}` !== '' ? bodyweightValue : '';
 
   (day.exercises || []).forEach(exercise => {
     const exerciseName = (exercise.name || '').trim() || 'Oefening';
@@ -1669,7 +1826,8 @@ function buildRowsForDay(date, day) {
     totalExercises,
     totalSets,
     totalVolume,
-    bestStr
+    bestStr,
+    bodyweight
   ]];
 
   return { rowsDays, rowsSets };
@@ -1883,7 +2041,8 @@ function buildAllFromSheets(daysRows, setsRows) {
     const date = normalizeDateValue(row[0]);
     if (!date) return;
     const sessionName = row[1] || '';
-    all[date] = { sessionName, exercises: [] };
+    const bodyweight = parseMaybeNumber(row[6]);
+    all[date] = { sessionName, bodyweight, exercises: [] };
   });
 
   (setsRows || []).forEach(row => {
@@ -1904,7 +2063,7 @@ function buildAllFromSheets(daysRows, setsRows) {
     const done = doneRaw === true || doneRaw === 'yes' || doneRaw === 'true' || doneRaw === 1 || doneRaw === '1';
 
     if (!all[date]) {
-      all[date] = { sessionName, exercises: [] };
+      all[date] = { sessionName, bodyweight: '', exercises: [] };
     } else if (!all[date].sessionName && sessionName) {
       all[date].sessionName = sessionName;
     }
@@ -2048,6 +2207,11 @@ saveDayBtn.addEventListener('click', () => {
 
 sessionNameInput.addEventListener('input', () => {
   state.sessionName = sessionNameInput.value;
+  persist();
+});
+
+bodyweightInput.addEventListener('input', () => {
+  state.bodyweight = bodyweightInput.value;
   persist();
 });
 

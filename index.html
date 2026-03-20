@@ -26,6 +26,10 @@
           <span>Sessie naam</span>
           <input id="sessionName" type="text" placeholder="Bijv. Benen + Core" />
         </label>
+        <label class="control">
+          <span>Lichaamsgewicht (kg)</span>
+          <input id="bodyweightInput" type="number" min="0" step="0.1" placeholder="Bijv. 82.4" />
+        </label>
         <div class="control buttons">
           <button id="addExercise" class="primary">Oefening toevoegen</button>
           <button id="saveDay" class="ghost">Opslaan</button>
@@ -115,6 +119,14 @@
           <div id="focusStartNow" class="metrics"></div>
           <div id="focusTable" class="progress-table"></div>
           <p id="focusEmpty" class="hint">Klik op een oefening om progress te zien.</p>
+        </div>
+
+        <div class="panel-header spaced">
+          <h2>Lichaamsgewicht</h2>
+        </div>
+        <div class="progress">
+          <canvas id="bodyweightChart" width="360" height="190"></canvas>
+          <p id="bodyweightHint" class="hint">Vul per dag je gewicht in om je trend te zien.</p>
         </div>
 
         <div class="panel-header spaced">
