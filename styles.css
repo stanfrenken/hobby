@@ -201,6 +201,22 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   gap: 12px;
 }
 
+.exercise-title {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.exercise-select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: #fff;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
 .exercise-name {
   flex: 1;
   font-size: 1.05rem;
@@ -214,6 +230,12 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .exercise-name:focus { outline: none; border-bottom-color: var(--accent); }
 
 .exercise-actions { display: flex; gap: 8px; align-items: center; }
+
+.exercise-select:focus,
+.exercise-name:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 
 .exercise-meta {
   display: grid;

@@ -168,7 +168,12 @@
   <template id="exerciseTemplate">
     <article class="exercise-card" data-id="">
       <div class="exercise-head">
-        <input class="exercise-name" type="text" placeholder="Oefening (bijv. Squat)" />
+        <div class="exercise-title">
+          <select class="exercise-select">
+            <option value="">Kies oefening uit lijst</option>
+          </select>
+          <input class="exercise-name" type="text" placeholder="Of typ een oefening (bijv. Squat)" />
+        </div>
         <div class="exercise-actions">
           <button class="ghost small add-set">+ Set</button>
           <button class="ghost small duplicate-set">Herhaal</button>

@@ -220,9 +220,85 @@ function populateMuscleSelect(select, options) {
   });
 }
 
+function normalizeExerciseName(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getCurrentDataSnapshot() {
+  const all = loadAll();
+  all[state.date] = cloneState();
+  return all;
+}
+
+function getAutoExerciseProfile(name, catalog) {
+  const cleanName = (name || '').trim();
+  if (!cleanName) return null;
+  const key = normalizeExerciseName(cleanName);
+  const match = (catalog || []).find(item => normalizeExerciseName(item.name) === key);
+  if (match) return match;
+
+  const fallback = classifyExercise(cleanName);
+  return {
+    name: cleanName,
+    primary: fallback.primary || 'Overig',
+    secondary: fallback.secondary?.[0] || ''
+  };
+}
+
+function applyExerciseProfile(exercise, card, profile, catalog) {
+  const nameInput = card?.querySelector('.exercise-name');
+  const selectInput = card?.querySelector('.exercise-select');
+  const primarySelect = card?.querySelector('.exercise-primary');
+  const secondarySelect = card?.querySelector('.exercise-secondary');
+
+  if (!profile) {
+    exercise.primaryGroup = '';
+    exercise.secondaryGroup = '';
+    if (selectInput) selectInput.value = '';
+    if (primarySelect) primarySelect.value = 'Automatisch';
+    if (secondarySelect) secondarySelect.value = 'Geen';
+    return;
+  }
+
+  exercise.name = profile.name;
+  exercise.primaryGroup = profile.primary || '';
+  exercise.secondaryGroup = profile.secondary && profile.secondary !== exercise.primaryGroup ? profile.secondary : '';
+
+  if (nameInput) nameInput.value = exercise.name;
+  if (selectInput) {
+    const exact = (catalog || []).find(item => normalizeExerciseName(item.name) === normalizeExerciseName(exercise.name));
+    selectInput.value = exact ? exact.name : '';
+  }
+  if (primarySelect) primarySelect.value = exercise.primaryGroup || 'Automatisch';
+  if (secondarySelect) secondarySelect.value = exercise.secondaryGroup || 'Geen';
+}
+
+function populateExerciseSelect(select, catalog, currentName) {
+  if (!select) return;
+  select.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Kies oefening uit lijst';
+  select.appendChild(placeholder);
+
+  catalog.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item.name;
+    option.textContent = item.name;
+    select.appendChild(option);
+  });
+
+  const exact = getAutoExerciseProfile(currentName, catalog);
+  select.value = exact && catalog.some(item => normalizeExerciseName(item.name) === normalizeExerciseName(currentName))
+    ? exact.name
+    : '';
+}
+
 function renderExercises() {
   exerciseList.innerHTML = '';
   ensureActiveExercise();
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
 
   if (!state.exercises.length) {
     emptyState.style.display = 'block';
@@ -236,15 +312,18 @@ function renderExercises() {
     if (exercise.id === activeExerciseId) card.classList.add('active');
 
     const nameInput = card.querySelector('.exercise-name');
+    const selectInput = card.querySelector('.exercise-select');
     const notesInput = card.querySelector('.exercise-notes');
     const primarySelect = card.querySelector('.exercise-primary');
     const secondarySelect = card.querySelector('.exercise-secondary');
     nameInput.value = exercise.name;
+    populateExerciseSelect(selectInput, catalog, exercise.name);
     notesInput.value = exercise.notes;
     populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
     populateMuscleSelect(secondarySelect, SECONDARY_SELECT_OPTIONS);
-    primarySelect.value = exercise.primaryGroup || 'Automatisch';
-    secondarySelect.value = exercise.secondaryGroup || 'Geen';
+    const displayProfile = getAutoExerciseProfile(exercise.name, catalog);
+    primarySelect.value = exercise.primaryGroup || displayProfile?.primary || 'Automatisch';
+    secondarySelect.value = exercise.secondaryGroup || displayProfile?.secondary || 'Geen';
 
     const setsBody = card.querySelector('.sets-body');
     exercise.sets.forEach((set, index) => {
@@ -471,9 +550,22 @@ function handleInputChange(target) {
   const exId = card.dataset.id;
   const exercise = state.exercises.find(ex => ex.id === exId);
   if (!exercise) return;
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
 
   if (target.classList.contains('exercise-name')) {
-    exercise.name = target.value;
+    const profile = getAutoExerciseProfile(target.value, catalog);
+    if (profile) {
+      applyExerciseProfile(exercise, card, profile, catalog);
+    } else {
+      exercise.name = target.value;
+      applyExerciseProfile(exercise, card, null, catalog);
+    }
+  }
+  if (target.classList.contains('exercise-select')) {
+    if (target.value) {
+      const profile = getAutoExerciseProfile(target.value, catalog);
+      applyExerciseProfile(exercise, card, profile, catalog);
+    }
   }
   if (target.classList.contains('exercise-notes')) {
     exercise.notes = target.value;
@@ -707,6 +799,43 @@ const PRIMARY_GROUPS = [
   'Overig'
 ];
 
+const EXERCISE_LIBRARY = [
+  { name: 'Bench Press', primary: 'Borst', secondary: 'Triceps' },
+  { name: 'Incline Bench Press', primary: 'Borst', secondary: 'Triceps' },
+  { name: 'Chest Press', primary: 'Borst', secondary: 'Triceps' },
+  { name: 'Incline Fly', primary: 'Borst', secondary: 'Schouders' },
+  { name: 'Cable Fly', primary: 'Borst', secondary: 'Schouders' },
+  { name: 'Push-Up', primary: 'Borst', secondary: 'Triceps' },
+  { name: 'Shoulder Press', primary: 'Schouders', secondary: 'Triceps' },
+  { name: 'Lateral Raise', primary: 'Schouders', secondary: 'Traps' },
+  { name: 'Rear Delt Fly', primary: 'Schouders', secondary: 'Upper back' },
+  { name: 'Face Pull', primary: 'Upper back', secondary: 'Schouders' },
+  { name: 'Barbell Curl', primary: 'Biceps', secondary: '' },
+  { name: 'Dumbbell Curl', primary: 'Biceps', secondary: '' },
+  { name: 'Hammer Curl', primary: 'Biceps', secondary: '' },
+  { name: 'Tricep Pushdown', primary: 'Triceps', secondary: '' },
+  { name: 'Skull Crusher', primary: 'Triceps', secondary: '' },
+  { name: 'Overhead Tricep Extension', primary: 'Triceps', secondary: '' },
+  { name: 'Squat', primary: 'Quads', secondary: 'Hamstrings' },
+  { name: 'Hack Squat', primary: 'Quads', secondary: 'Hamstrings' },
+  { name: 'Leg Press', primary: 'Quads', secondary: 'Hamstrings' },
+  { name: 'Walking Lunge', primary: 'Quads', secondary: 'Hamstrings' },
+  { name: 'Leg Extension', primary: 'Quads', secondary: '' },
+  { name: 'Romanian Deadlift', primary: 'Hamstrings', secondary: 'Upper back' },
+  { name: 'Deadlift', primary: 'Hamstrings', secondary: 'Upper back' },
+  { name: 'Leg Curl', primary: 'Hamstrings', secondary: '' },
+  { name: 'Calf Raise', primary: 'Kuiten', secondary: '' },
+  { name: 'Lat Pulldown', primary: 'Upper back', secondary: 'Biceps' },
+  { name: 'Pull-Up', primary: 'Upper back', secondary: 'Biceps' },
+  { name: 'Seated Cable Row', primary: 'Upper back', secondary: 'Biceps' },
+  { name: 'Barbell Row', primary: 'Upper back', secondary: 'Biceps' },
+  { name: 'Shrug', primary: 'Traps', secondary: '' },
+  { name: 'Crunch', primary: 'Abs', secondary: '' },
+  { name: 'Cable Crunch', primary: 'Abs', secondary: '' },
+  { name: 'Hanging Leg Raise', primary: 'Abs', secondary: '' },
+  { name: 'Plank', primary: 'Abs', secondary: '' }
+];
+
 const MUSCLE_SELECT_OPTIONS = ['Automatisch', ...PRIMARY_GROUPS];
 const SECONDARY_SELECT_OPTIONS = ['Geen', ...PRIMARY_GROUPS];
 
@@ -771,6 +900,29 @@ function resolveExerciseMuscles(exercise) {
   const secondaryRaw = sanitizeMuscleGroup(exercise?.secondaryGroup) || fallback.secondary[0] || '';
   const secondary = secondaryRaw && secondaryRaw !== primary ? secondaryRaw : '';
   return { primary, secondary };
+}
+
+function getExerciseCatalog(all) {
+  const byName = new Map();
+
+  EXERCISE_LIBRARY.forEach(item => {
+    byName.set(normalizeExerciseName(item.name), { ...item });
+  });
+
+  Object.entries(all || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([, day]) => {
+      (day?.exercises || []).forEach(exercise => {
+        const name = (exercise?.name || '').trim();
+        if (!name) return;
+        const { primary, secondary } = resolveExerciseMuscles(exercise);
+        byName.set(normalizeExerciseName(name), { name, primary, secondary });
+      });
+    });
+
+  return Array.from(byName.values())
+    .filter(item => item.name)
+    .sort((a, b) => a.name.localeCompare(b.name, 'nl-NL'));
 }
 
 function getWeekDates(baseDate) {
