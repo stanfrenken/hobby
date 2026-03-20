@@ -1,10 +1,15 @@
 ﻿const STORAGE_KEY = 'fitnessLog.v1';
 const SYNC_KEY = 'fitnessLog.sync.v1';
 const EXERCISE_LIBRARY_KEY = 'fitnessLog.exerciseLibrary.v1';
+const UI_PAGE_KEY = 'fitnessLog.uiPage.v1';
 
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
+const pageLogBtn = document.getElementById('pageLogBtn');
+const pageDashboardBtn = document.getElementById('pageDashboardBtn');
+const logPage = document.getElementById('logPage');
+const dashboardPage = document.getElementById('dashboardPage');
 const addExerciseBtn = document.getElementById('addExercise');
 const addExerciseMiniBtn = document.getElementById('addExerciseMini');
 const addExerciseEmptyBtn = document.getElementById('addExerciseEmpty');
@@ -76,6 +81,25 @@ const syncState = {
 const AUTO_PULL_INTERVAL_MS = 10000;
 const AUTO_PULL_MIN_GAP_MS = 8000;
 const AUTO_PULL_DIRTY_GRACE_MS = 1500;
+
+function setActivePage(page, options = {}) {
+  const nextPage = page === 'dashboard' ? 'dashboard' : 'log';
+  if (logPage) logPage.classList.toggle('active', nextPage === 'log');
+  if (dashboardPage) dashboardPage.classList.toggle('active', nextPage === 'dashboard');
+  if (pageLogBtn) pageLogBtn.classList.toggle('active', nextPage === 'log');
+  if (pageDashboardBtn) pageDashboardBtn.classList.toggle('active', nextPage === 'dashboard');
+  if (!options.skipPersist) {
+    localStorage.setItem(UI_PAGE_KEY, nextPage);
+  }
+  if (!options.skipScroll) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+function getPreferredPage() {
+  const saved = localStorage.getItem(UI_PAGE_KEY);
+  return saved === 'dashboard' ? 'dashboard' : 'log';
+}
 
 function todayISO() {
   const now = new Date();
@@ -2196,6 +2220,14 @@ async function maybeAutoPull(reason) {
 }
 
 
+pageLogBtn.addEventListener('click', () => {
+  setActivePage('log');
+});
+
+pageDashboardBtn.addEventListener('click', () => {
+  setActivePage('dashboard');
+});
+
 addExerciseBtn.addEventListener('click', addExercise);
 addExerciseMiniBtn.addEventListener('click', addExercise);
 addExerciseEmptyBtn.addEventListener('click', addExercise);
@@ -2329,6 +2361,7 @@ dateInput.addEventListener('change', () => {
 
 function init() {
   loadSyncConfig();
+  setActivePage(getPreferredPage(), { skipScroll: true });
   const today = todayISO();
   dateInput.value = today;
   loadDay(today);
