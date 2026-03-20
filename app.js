@@ -17,6 +17,7 @@ const weekSecondaryChart = document.getElementById('weekSecondaryChart');
 const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
 const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
 const focusName = document.getElementById('focusName');
+const focusExerciseSelect = document.getElementById('focusExerciseSelect');
 const focusChart = document.getElementById('focusChart');
 const focusMetrics = document.getElementById('focusMetrics');
 const focusStartNow = document.getElementById('focusStartNow');
@@ -489,6 +490,7 @@ function refreshProgress() {
   all[state.date] = cloneState();
 
   renderWeekCharts(all);
+  updateFocusExerciseSelector(all);
   renderExerciseFocus(all);
 }
 
@@ -769,43 +771,141 @@ function renderLegend(container, groups) {
   });
 }
 
+function getChartTooltip() {
+  if (chartTooltip) return chartTooltip;
+  chartTooltip = document.createElement('div');
+  chartTooltip.className = 'chart-tooltip';
+  document.body.appendChild(chartTooltip);
+  return chartTooltip;
+}
+
+function hideChartTooltip() {
+  const tooltip = getChartTooltip();
+  tooltip.classList.remove('visible');
+}
+
+function showChartTooltip(content, x, y) {
+  const tooltip = getChartTooltip();
+  tooltip.innerHTML = content;
+  tooltip.classList.add('visible');
+  tooltip.style.left = `${x + 14}px`;
+  tooltip.style.top = `${y + 14}px`;
+}
+
+function bindStackedChartHover(canvas, hitboxes) {
+  if (!canvas) return;
+  canvas._stackedHitboxes = hitboxes;
+  canvas.classList.toggle('chart-hover', hitboxes.length > 0);
+
+  if (canvas._hoverBound) return;
+  canvas._hoverBound = true;
+
+  canvas.addEventListener('mousemove', event => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (event.clientX - rect.left) * scaleX;
+    const y = (event.clientY - rect.top) * scaleY;
+    const hit = (canvas._stackedHitboxes || []).find(box =>
+      x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height
+    );
+
+    if (!hit) {
+      hideChartTooltip();
+      return;
+    }
+
+    showChartTooltip(
+      `<span class="title">${formatShortDate(hit.date)} · ${hit.group}</span><span class="value">${formatNumber(hit.value)} kg</span>`,
+      event.clientX,
+      event.clientY
+    );
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    hideChartTooltip();
+  });
+}
+
 function drawStackedBarChart(canvas, dates, totals, options = {}) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
-  const padding = 28;
+  const paddingLeft = 48;
+  const paddingRight = 14;
+  const paddingTop = 14;
+  const paddingBottom = 30;
   const groups = options.groups || PRIMARY_GROUPS;
+  const hitboxes = [];
 
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
 
+  if (!groups.length || !dates.length) {
+    ctx.fillStyle = '#6a5e54';
+    ctx.font = '14px Space Grotesk';
+    ctx.fillText('Geen data', 14, h / 2);
+    bindStackedChartHover(canvas, []);
+    return;
+  }
+
   const totalsPerDay = dates.map((_, i) =>
     groups.reduce((sum, group) => sum + (totals[group]?.[i] || 0), 0)
   );
   const maxTotal = Math.max(...totalsPerDay, 10);
-  const chartHeight = h - padding * 2;
+  const chartHeight = h - paddingTop - paddingBottom;
   const barGap = 8;
-  const barWidth = (w - padding * 2 - barGap * (dates.length - 1)) / dates.length;
+  const chartWidth = w - paddingLeft - paddingRight;
+  const barWidth = (chartWidth - barGap * (dates.length - 1)) / dates.length;
+  const ticks = 4;
 
   ctx.font = '11px Space Grotesk';
-  ctx.fillStyle = '#6a5e54';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i <= ticks; i += 1) {
+    const value = (maxTotal / ticks) * i;
+    const y = h - paddingBottom - (value / maxTotal) * chartHeight;
+    ctx.strokeStyle = 'rgba(26,26,26,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(w - paddingRight, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#6a5e54';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${formatNumber(value)} kg`, paddingLeft - 6, y);
+  }
 
   dates.forEach((date, index) => {
-    let y = h - padding;
+    let y = h - paddingBottom;
+    const x = paddingLeft + index * (barWidth + barGap);
     groups.forEach(group => {
       const value = totals[group]?.[index] || 0;
       if (value <= 0) return;
       const height = (value / maxTotal) * chartHeight;
       ctx.fillStyle = CATEGORY_COLORS[group] || '#b2bec3';
-      ctx.fillRect(padding + index * (barWidth + barGap), y - height, barWidth, height);
+      ctx.fillRect(x, y - height, barWidth, height);
+      hitboxes.push({
+        x,
+        y: y - height,
+        width: barWidth,
+        height,
+        group,
+        value,
+        date
+      });
       y -= height;
     });
 
     ctx.fillStyle = '#6a5e54';
-    ctx.fillText(formatTinyDate(date), padding + index * (barWidth + barGap), h - 8);
+    ctx.textAlign = 'center';
+    ctx.fillText(formatTinyDate(date), x + barWidth / 2, h - 10);
   });
+
+  bindStackedChartHover(canvas, hitboxes);
 }
 
 function renderWeekCharts(all) {
@@ -822,7 +922,41 @@ function renderWeekCharts(all) {
   renderLegend(weekSecondaryLegend, secondaryGroups);
 }
 
+function updateFocusExerciseSelector(all) {
+  if (!focusExerciseSelect) return;
+  const names = collectExerciseNames(all);
+  const activeName = (state.exercises.find(ex => ex.id === activeExerciseId)?.name || '').trim();
+  const nextValue = names.includes(focusExerciseName)
+    ? focusExerciseName
+    : names.includes(activeName)
+      ? activeName
+      : names[0] || '';
+
+  focusExerciseSelect.innerHTML = '';
+
+  if (!names.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Nog geen oefeningen';
+    focusExerciseSelect.appendChild(option);
+    focusExerciseName = '';
+    return;
+  }
+
+  names.forEach(name => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    focusExerciseSelect.appendChild(option);
+  });
+
+  focusExerciseName = nextValue;
+  focusExerciseSelect.value = nextValue;
+}
+
 let activeExerciseId = null;
+let focusExerciseName = '';
+let chartTooltip = null;
 
 function ensureActiveExercise() {
   if (!state.exercises.length) {
@@ -839,6 +973,11 @@ function ensureActiveExercise() {
 function setActiveExercise(exerciseId) {
   if (!exerciseId || exerciseId === activeExerciseId) return;
   activeExerciseId = exerciseId;
+  const activeExercise = state.exercises.find(ex => ex.id === exerciseId);
+  if (activeExercise?.name?.trim()) {
+    focusExerciseName = activeExercise.name.trim();
+    if (focusExerciseSelect) focusExerciseSelect.value = focusExerciseName;
+  }
   document.querySelectorAll('.exercise-card').forEach(card => {
     card.classList.toggle('active', card.dataset.id === exerciseId);
   });
@@ -881,8 +1020,10 @@ function renderExerciseFocus(all) {
   if (!focusChart || !focusTable || !focusMetrics) return;
 
   ensureActiveExercise();
+  const selectedName = (focusExerciseName || '').trim();
   const active = state.exercises.find(ex => ex.id === activeExerciseId);
-  if (!active) {
+
+  if (!selectedName && !active) {
     if (focusName) focusName.textContent = '-';
     if (focusEmpty) focusEmpty.style.display = 'block';
     drawChart(focusChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
@@ -892,7 +1033,8 @@ function renderExerciseFocus(all) {
     return;
   }
 
-  const name = (active.name || '').trim();
+  const name = selectedName || (active?.name || '').trim();
+  const currentExercise = state.exercises.find(ex => (ex.name || '').trim() === name) || active || null;
   if (!name) {
     if (focusName) focusName.textContent = 'Oefening';
     if (focusEmpty) {
@@ -919,7 +1061,7 @@ function renderExerciseFocus(all) {
     annotations
   });
   renderMetrics(focusMetrics, buildMetrics(points));
-  renderStartNow(focusStartNow, points, active);
+  renderStartNow(focusStartNow, points, currentExercise);
   renderProgressTable(rows.slice(-6).reverse(), focusTable, 'Nog geen sessies voor deze oefening.');
 }
 
@@ -1601,6 +1743,20 @@ syncAllBtn.addEventListener('click', () => {
 syncPullBtn.addEventListener('click', () => {
   saveSyncConfig();
   pullAllFromSheets();
+});
+
+focusExerciseSelect.addEventListener('change', () => {
+  focusExerciseName = focusExerciseSelect.value;
+  const matchingCurrent = state.exercises.find(ex => (ex.name || '').trim() === focusExerciseName);
+  if (matchingCurrent) {
+    activeExerciseId = matchingCurrent.id;
+    document.querySelectorAll('.exercise-card').forEach(card => {
+      card.classList.toggle('active', card.dataset.id === activeExerciseId);
+    });
+  }
+  const all = loadAll();
+  all[state.date] = cloneState();
+  renderExerciseFocus(all);
 });
 
 syncTestBtn.addEventListener('click', () => {
