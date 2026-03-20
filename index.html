@@ -87,12 +87,19 @@
 
       <aside class="panel side">
         <div class="panel-header">
-          <h2>Progress per dag</h2>
+          <h2>Weekvolume (primair)</h2>
         </div>
         <div class="progress">
-          <canvas id="dayProgressChart" width="360" height="170"></canvas>
-          <div id="dayProgressMetrics" class="metrics"></div>
-          <div id="dayProgressTable" class="progress-table"></div>
+          <canvas id="weekPrimaryChart" width="360" height="190"></canvas>
+          <div id="weekPrimaryLegend" class="legend"></div>
+        </div>
+
+        <div class="panel-header spaced">
+          <h2>Weekvolume (secundair)</h2>
+        </div>
+        <div class="progress">
+          <canvas id="weekSecondaryChart" width="360" height="190"></canvas>
+          <div id="weekSecondaryLegend" class="legend"></div>
         </div>
 
         <div class="panel-header spaced">

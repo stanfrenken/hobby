@@ -12,9 +12,10 @@ const emptyState = document.getElementById('emptyState');
 const dayBadge = document.getElementById('dayBadge');
 const dayExerciseSummary = document.getElementById('dayExerciseSummary');
 const dayEmpty = document.getElementById('dayEmpty');
-const dayProgressChart = document.getElementById('dayProgressChart');
-const dayProgressTable = document.getElementById('dayProgressTable');
-const dayProgressMetrics = document.getElementById('dayProgressMetrics');
+const weekPrimaryChart = document.getElementById('weekPrimaryChart');
+const weekSecondaryChart = document.getElementById('weekSecondaryChart');
+const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
+const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
 const focusName = document.getElementById('focusName');
 const focusChart = document.getElementById('focusChart');
 const focusMetrics = document.getElementById('focusMetrics');
@@ -232,6 +233,13 @@ function formatSetTag(set) {
   return '-';
 }
 
+function formatSetsSummary(sets) {
+  if (!sets || !sets.length) return '-';
+  return sets
+    .map((set, index) => `S${index + 1} ${formatSetTag(set)}`)
+    .join(', ');
+}
+
 function renderDayExerciseSummary() {
   if (!dayExerciseSummary) return;
 
@@ -317,6 +325,15 @@ function formatShortDate(value) {
   }).format(date);
 }
 
+function formatTinyDate(value) {
+  const date = parseDate(value);
+  if (!date) return value || '-';
+  return new Intl.DateTimeFormat('nl-NL', {
+    weekday: 'short',
+    day: '2-digit'
+  }).format(date);
+}
+
 function formatLongDate(value) {
   const date = parseDate(value);
   if (!date) return value || '-';
@@ -389,7 +406,7 @@ function refreshProgress() {
   const all = loadAll();
   all[state.date] = cloneState();
 
-  renderDayProgress(all);
+  renderWeekCharts(all);
   renderExerciseFocus(all);
 }
 
@@ -412,10 +429,6 @@ function formatMetricValue(point) {
   return `${date} • Vol ${volume} • ${best}`;
 }
 
-function formatWeightValue(value) {
-  if (!value || value <= 0) return '-';
-  return `${formatNumber(value)} kg`;
-}
 
 function getPointAtOrBefore(points, targetDate) {
   let candidate = null;
@@ -505,77 +518,211 @@ function renderMetrics(container, metrics) {
   });
 }
 
-function renderStartNow(container, points) {
+function renderStartNow(container, points, currentExercise) {
   if (!container) return;
-  if (!points.length) {
-    renderMetrics(container, [
-      { label: 'Startgewicht', value: '-' },
-      { label: 'Huidig gewicht', value: '-' },
-      { label: 'Verschil', value: '-' }
-    ]);
-    return;
-  }
+  container.innerHTML = '';
 
   const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
   const first = sorted[0];
-  const last = sorted[sorted.length - 1];
-  const startWeight = first.bestWeight || 0;
-  const lastWeight = last.bestWeight || 0;
-  const delta = lastWeight - startWeight;
-  const deltaStr = startWeight && lastWeight ? `${delta >= 0 ? '+' : ''}${formatNumber(delta)} kg` : '-';
+  const currentSets = currentExercise?.sets || [];
+  const currentBest = findBestSet(currentSets);
+  const currentBestStr = currentBest ? `${formatNumber(currentBest.weight)} x ${currentBest.reps}` : '-';
+  const currentSetsLabel = formatSetsSummary(currentSets);
 
-  container.innerHTML = '';
-  [
-    { label: 'Startgewicht', value: formatWeightValue(startWeight), sub: formatShortDate(first.date) },
-    { label: 'Huidig gewicht', value: formatWeightValue(lastWeight), sub: formatShortDate(last.date) },
-    { label: 'Verschil', value: deltaStr, sub: startWeight && lastWeight ? `${formatNumber(startWeight)} → ${formatNumber(lastWeight)} kg` : '-' }
-  ].forEach(metric => {
+  const currentDate = state.date;
+  const previousSessions = sorted.filter(point => point.date < currentDate);
+  const last = previousSessions.length ? previousSessions[previousSessions.length - 1] : sorted[sorted.length - 1];
+
+  const cards = [
+    {
+      label: 'Startgewicht',
+      value: first ? first.best : '-',
+      sub: first ? first.setsLabel : '-'
+    },
+    {
+      label: 'Laatste keer',
+      value: last ? last.best : '-',
+      sub: last ? last.setsLabel : '-'
+    },
+    {
+      label: 'Huidig',
+      value: currentBestStr,
+      sub: currentSetsLabel
+    }
+  ];
+
+  cards.forEach(card => {
     const item = document.createElement('div');
     item.className = 'metric';
-    item.innerHTML = `<span class="label">${metric.label}</span><span class="value">${metric.value}</span><span class="sub">${metric.sub}</span>`;
+    item.innerHTML = `<span class="label">${card.label}</span><span class="value">${card.value}</span><span class="sub">${card.sub}</span>`;
     container.appendChild(item);
   });
 }
 
-function collectDayTotals(all) {
-  const points = [];
-  const rows = [];
-  Object.entries(all)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .forEach(([date, day]) => {
-      const exercises = day.exercises || [];
-      const sets = exercises.flatMap(ex => ex.sets || []);
-      const totalSets = sets.length;
-      const volume = sets.reduce((sum, set) => sum + setVolume(set), 0);
-      const best = findBestSet(sets);
-      const bestStr = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
+const PRIMARY_GROUPS = [
+  'Biceps',
+  'Triceps',
+  'Borst',
+  'Schouders',
+  'Kuiten',
+  'Hamstrings',
+  'Quads',
+  'Upper back',
+  'Traps',
+  'Abs',
+  'Overig'
+];
 
-      const bestWeight = best ? Number(best.weight) || 0 : 0;
-      const bestReps = best ? Number(best.reps) || 0 : 0;
-      points.push({ date, volume, best: bestStr, bestWeight, bestReps });
-      rows.push({
-        date,
-        volume,
-        best: bestStr,
-        detail: `${formatNumber(volume)} - ${bestStr} • ${totalSets} sets`
-      });
-    });
+const CATEGORY_COLORS = {
+  Biceps: '#6c5ce7',
+  Triceps: '#00b894',
+  Borst: '#d63031',
+  Schouders: '#e17055',
+  Kuiten: '#0984e3',
+  Hamstrings: '#2d3436',
+  Quads: '#e84393',
+  'Upper back': '#00cec9',
+  Traps: '#fdcb6e',
+  Abs: '#636e72',
+  Overig: '#b2bec3'
+};
 
-  return { points, rows };
+function classifyExercise(name) {
+  const n = (name || '').toLowerCase();
+
+  if (/(shoulder|overhead|military|arnold|lateral|rear delt|delt)/.test(n)) {
+    return { primary: 'Schouders', secondary: /press/.test(n) ? ['Triceps'] : [] };
+  }
+  if (/(bench|chest|incline|decline|fly|pec)/.test(n)) {
+    return { primary: 'Borst', secondary: /press|bench/.test(n) ? ['Triceps'] : [] };
+  }
+  if (/(bicep|curl)/.test(n)) {
+    return { primary: 'Biceps', secondary: [] };
+  }
+  if (/(tricep|pushdown|skull|extension)/.test(n)) {
+    return { primary: 'Triceps', secondary: [] };
+  }
+  if (/(squat|leg press|lunge|leg extension|hack squat)/.test(n)) {
+    return { primary: 'Quads', secondary: ['Hamstrings'] };
+  }
+  if (/(hamstring|leg curl|rdl|romanian|deadlift|good morning)/.test(n)) {
+    return { primary: 'Hamstrings', secondary: ['Upper back'] };
+  }
+  if (/(calf)/.test(n)) {
+    return { primary: 'Kuiten', secondary: [] };
+  }
+  if (/(row|pull|pulldown|lat|chin|pullup|pull-up)/.test(n)) {
+    return { primary: 'Upper back', secondary: ['Biceps'] };
+  }
+  if (/(shrug|trap)/.test(n)) {
+    return { primary: 'Traps', secondary: [] };
+  }
+  if (/(abs|core|crunch|plank|sit-up|leg raise)/.test(n)) {
+    return { primary: 'Abs', secondary: [] };
+  }
+
+  return { primary: 'Overig', secondary: [] };
 }
 
-function renderDayProgress(all) {
-  if (!dayProgressChart || !dayProgressTable) return;
-  const { points, rows } = collectDayTotals(all);
-  const dayAnnotations = buildPRAnnotations(points);
-  drawChart(dayProgressChart, points, {
-    lineColor: '#0f6b66',
-    dotColor: '#c2552d',
-    emptyLabel: 'Geen dagen',
-    annotations: dayAnnotations
+function getWeekDates(baseDate) {
+  const base = parseDate(baseDate) || new Date();
+  const dates = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const d = new Date(base);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+function computeWeekTotals(all, dates) {
+  const primaryTotals = {};
+  const secondaryTotals = {};
+  PRIMARY_GROUPS.forEach(group => {
+    primaryTotals[group] = new Array(dates.length).fill(0);
+    secondaryTotals[group] = new Array(dates.length).fill(0);
   });
-  renderMetrics(dayProgressMetrics, buildMetrics(points));
-  renderProgressTable(rows.slice(-6).reverse(), dayProgressTable, 'Log dagen om progress te zien.');
+
+  dates.forEach((date, index) => {
+    const day = all[date];
+    if (!day || !day.exercises) return;
+    day.exercises.forEach(exercise => {
+      const name = (exercise.name || '').trim();
+      if (!name) return;
+      const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set), 0);
+      const { primary, secondary } = classifyExercise(name);
+      primaryTotals[primary][index] += volume;
+      secondary.forEach(group => {
+        if (secondaryTotals[group]) secondaryTotals[group][index] += volume;
+      });
+    });
+  });
+
+  return { primaryTotals, secondaryTotals };
+}
+
+function renderLegend(container, groups) {
+  if (!container) return;
+  container.innerHTML = '';
+  groups.forEach(group => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<span class="legend-swatch" style="background:${CATEGORY_COLORS[group] || '#b2bec3'}"></span>${group}`;
+    container.appendChild(item);
+  });
+}
+
+function drawStackedBarChart(canvas, dates, totals, options = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const padding = 28;
+  const groups = options.groups || PRIMARY_GROUPS;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+
+  const totalsPerDay = dates.map((_, i) =>
+    groups.reduce((sum, group) => sum + (totals[group]?.[i] || 0), 0)
+  );
+  const maxTotal = Math.max(...totalsPerDay, 10);
+  const chartHeight = h - padding * 2;
+  const barGap = 8;
+  const barWidth = (w - padding * 2 - barGap * (dates.length - 1)) / dates.length;
+
+  ctx.font = '11px Space Grotesk';
+  ctx.fillStyle = '#6a5e54';
+
+  dates.forEach((date, index) => {
+    let y = h - padding;
+    groups.forEach(group => {
+      const value = totals[group]?.[index] || 0;
+      if (value <= 0) return;
+      const height = (value / maxTotal) * chartHeight;
+      ctx.fillStyle = CATEGORY_COLORS[group] || '#b2bec3';
+      ctx.fillRect(padding + index * (barWidth + barGap), y - height, barWidth, height);
+      y -= height;
+    });
+
+    ctx.fillStyle = '#6a5e54';
+    ctx.fillText(formatTinyDate(date), padding + index * (barWidth + barGap), h - 8);
+  });
+}
+
+function renderWeekCharts(all) {
+  const dates = getWeekDates(state.date);
+  const { primaryTotals, secondaryTotals } = computeWeekTotals(all, dates);
+
+  const primaryGroups = PRIMARY_GROUPS.filter(group => primaryTotals[group].some(value => value > 0));
+  const secondaryGroups = PRIMARY_GROUPS.filter(group => secondaryTotals[group].some(value => value > 0));
+
+  drawStackedBarChart(weekPrimaryChart, dates, primaryTotals, { groups: primaryGroups });
+  drawStackedBarChart(weekSecondaryChart, dates, secondaryTotals, { groups: secondaryGroups });
+
+  renderLegend(weekPrimaryLegend, primaryGroups);
+  renderLegend(weekSecondaryLegend, secondaryGroups);
 }
 
 let activeExerciseId = null;
@@ -619,8 +766,9 @@ function buildExerciseProgress(name, all) {
       const bestStr = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
       const bestWeight = best ? Number(best.weight) || 0 : 0;
       const bestReps = best ? Number(best.reps) || 0 : 0;
+      const setsLabel = formatSetsSummary(sets);
 
-      points.push({ date, volume, best: bestStr, bestWeight, bestReps });
+      points.push({ date, volume, best: bestStr, bestWeight, bestReps, setsLabel });
       rows.push({
         date,
         volume,
@@ -642,7 +790,7 @@ function renderExerciseFocus(all) {
     if (focusEmpty) focusEmpty.style.display = 'block';
     drawChart(focusChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
     renderMetrics(focusMetrics, buildMetrics([]));
-    renderStartNow(focusStartNow, []);
+    renderStartNow(focusStartNow, [], null);
     renderProgressTable([], focusTable, 'Geen oefeningen gelogd.');
     return;
   }
@@ -656,7 +804,7 @@ function renderExerciseFocus(all) {
     }
     drawChart(focusChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
     renderMetrics(focusMetrics, buildMetrics([]));
-    renderStartNow(focusStartNow, []);
+    renderStartNow(focusStartNow, [], null);
     renderProgressTable([], focusTable, 'Nog geen sessies voor deze oefening.');
     return;
   }
@@ -674,7 +822,7 @@ function renderExerciseFocus(all) {
     annotations
   });
   renderMetrics(focusMetrics, buildMetrics(points));
-  renderStartNow(focusStartNow, points);
+  renderStartNow(focusStartNow, points, active);
   renderProgressTable(rows.slice(-6).reverse(), focusTable, 'Nog geen sessies voor deze oefening.');
 }
 
@@ -1043,7 +1191,13 @@ function parseMaybeNumber(value) {
 function normalizeDateValue(value) {
   if (!value) return '';
   if (value instanceof Date) return value.toISOString().slice(0, 10);
-  return String(value).trim();
+  const raw = String(value).trim();
+  if (raw.includes('T')) {
+    const date = new Date(raw);
+    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  }
+  if (/^\\d{4}-\\d{2}-\\d{2}/.test(raw)) return raw.slice(0, 10);
+  return raw;
 }
 
 function buildAllFromSheets(daysRows, setsRows) {
