@@ -2,7 +2,7 @@
 const SHEET_SETS = 'Sets';
 
 const DAYS_HEADERS = ['Date', 'Session', 'Exercises', 'Sets', 'Total Volume', 'Best Set'];
-const SETS_HEADERS = ['Date', 'Session', 'Exercise', 'Set', 'Reps', 'Weight', 'RPE', 'Done', 'Notes', 'Volume'];
+const SETS_HEADERS = ['Date', 'Session', 'Exercise', 'Primary Muscle', 'Secondary Muscle', 'Set', 'Reps', 'Weight', 'RPE', 'Done', 'Notes', 'Volume'];
 
 function doPost(e) {
   try {
@@ -80,6 +80,9 @@ function getOrCreate_(ss, name, headers) {
 
   const lastRow = sheet.getLastRow();
   if (lastRow === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    // Keep headers in sync when columns evolve (for example new muscle columns).
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
 

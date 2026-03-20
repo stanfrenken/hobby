@@ -83,7 +83,14 @@ function loadAll() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return {};
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeAllData(parsed);
+    const before = JSON.stringify(parsed);
+    const after = JSON.stringify(normalized);
+    if (before !== after) {
+      saveAll(normalized);
+    }
+    return normalized;
   } catch {
     return {};
   }
@@ -91,6 +98,46 @@ function loadAll() {
 
 function saveAll(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function normalizeAllData(data) {
+  if (!data || typeof data !== 'object') return {};
+  const normalized = {};
+
+  Object.entries(data).forEach(([rawDate, rawDay]) => {
+    const date = normalizeDateValue(rawDate);
+    if (!date) return;
+
+    const day = rawDay && typeof rawDay === 'object' ? rawDay : {};
+    const sourceExercises = Array.isArray(day.exercises) ? day.exercises : [];
+
+    const mappedExercises = sourceExercises.map(ex => ({
+      id: ex?.id || uid(),
+      name: ex?.name || '',
+      notes: ex?.notes || '',
+      primaryGroup: ex?.primaryGroup || '',
+      secondaryGroup: ex?.secondaryGroup || '',
+      sets: Array.isArray(ex?.sets)
+        ? ex.sets.map(set => ({
+          id: set?.id || uid(),
+          reps: set?.reps ?? '',
+          weight: set?.weight ?? '',
+          rpe: set?.rpe ?? '',
+          done: !!set?.done
+        }))
+        : []
+    }));
+
+    if (!normalized[date]) {
+      normalized[date] = { sessionName: day.sessionName || '', exercises: [] };
+    }
+    if (!normalized[date].sessionName && day.sessionName) {
+      normalized[date].sessionName = day.sessionName;
+    }
+    normalized[date].exercises.push(...mappedExercises);
+  });
+
+  return normalized;
 }
 
 function cloneState() {
@@ -109,6 +156,8 @@ function loadDay(date) {
     id: ex.id || uid(),
     name: ex.name || '',
     notes: ex.notes || '',
+    primaryGroup: ex.primaryGroup || '',
+    secondaryGroup: ex.secondaryGroup || '',
     sets: (ex.sets || []).map(set => ({
       id: set.id || uid(),
       reps: set.reps ?? '',
@@ -137,6 +186,8 @@ function addExercise() {
     id: uid(),
     name: '',
     notes: '',
+    primaryGroup: '',
+    secondaryGroup: '',
     sets: [newSet()]
   };
   state.exercises.push(exercise);
@@ -153,6 +204,17 @@ function newSet(seed) {
     rpe: seed?.rpe ?? '',
     done: false
   };
+}
+
+function populateMuscleSelect(select, options) {
+  if (!select) return;
+  if (select.options.length) return;
+  options.forEach(option => {
+    const el = document.createElement('option');
+    el.value = option;
+    el.textContent = option;
+    select.appendChild(el);
+  });
 }
 
 function renderExercises() {
@@ -172,8 +234,14 @@ function renderExercises() {
 
     const nameInput = card.querySelector('.exercise-name');
     const notesInput = card.querySelector('.exercise-notes');
+    const primarySelect = card.querySelector('.exercise-primary');
+    const secondarySelect = card.querySelector('.exercise-secondary');
     nameInput.value = exercise.name;
     notesInput.value = exercise.notes;
+    populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
+    populateMuscleSelect(secondarySelect, SECONDARY_SELECT_OPTIONS);
+    primarySelect.value = exercise.primaryGroup || 'Automatisch';
+    secondarySelect.value = exercise.secondaryGroup || 'Geen';
 
     const setsBody = card.querySelector('.sets-body');
     exercise.sets.forEach((set, index) => {
@@ -311,7 +379,8 @@ function formatNumber(value) {
 
 function parseDate(value) {
   if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
+  const raw = String(value).trim();
+  const date = raw.includes('T') ? new Date(raw) : new Date(`${raw}T00:00:00`);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -357,6 +426,19 @@ function handleInputChange(target) {
   }
   if (target.classList.contains('exercise-notes')) {
     exercise.notes = target.value;
+  }
+  if (target.classList.contains('exercise-primary')) {
+    exercise.primaryGroup = target.value === 'Automatisch' ? '' : target.value;
+    if (exercise.secondaryGroup && exercise.secondaryGroup === exercise.primaryGroup) {
+      exercise.secondaryGroup = '';
+      const secondaryEl = card.querySelector('.exercise-secondary');
+      if (secondaryEl) secondaryEl.value = 'Geen';
+    }
+  }
+  if (target.classList.contains('exercise-secondary')) {
+    const next = target.value === 'Geen' ? '' : target.value;
+    exercise.secondaryGroup = next === exercise.primaryGroup ? '' : next;
+    if (exercise.secondaryGroup === '') target.value = 'Geen';
   }
 
   const setRow = target.closest('.set-row');
@@ -573,6 +655,9 @@ const PRIMARY_GROUPS = [
   'Overig'
 ];
 
+const MUSCLE_SELECT_OPTIONS = ['Automatisch', ...PRIMARY_GROUPS];
+const SECONDARY_SELECT_OPTIONS = ['Geen', ...PRIMARY_GROUPS];
+
 const CATEGORY_COLORS = {
   Biceps: '#6c5ce7',
   Triceps: '#00b894',
@@ -624,6 +709,18 @@ function classifyExercise(name) {
   return { primary: 'Overig', secondary: [] };
 }
 
+function sanitizeMuscleGroup(value) {
+  return PRIMARY_GROUPS.includes(value) ? value : '';
+}
+
+function resolveExerciseMuscles(exercise) {
+  const fallback = classifyExercise(exercise?.name || '');
+  const primary = sanitizeMuscleGroup(exercise?.primaryGroup) || fallback.primary;
+  const secondaryRaw = sanitizeMuscleGroup(exercise?.secondaryGroup) || fallback.secondary[0] || '';
+  const secondary = secondaryRaw && secondaryRaw !== primary ? secondaryRaw : '';
+  return { primary, secondary };
+}
+
 function getWeekDates(baseDate) {
   const base = parseDate(baseDate) || new Date();
   const dates = [];
@@ -650,11 +747,11 @@ function computeWeekTotals(all, dates) {
       const name = (exercise.name || '').trim();
       if (!name) return;
       const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set), 0);
-      const { primary, secondary } = classifyExercise(name);
+      const { primary, secondary } = resolveExerciseMuscles(exercise);
       primaryTotals[primary][index] += volume;
-      secondary.forEach(group => {
-        if (secondaryTotals[group]) secondaryTotals[group][index] += volume;
-      });
+      if (secondary && secondaryTotals[secondary]) {
+        secondaryTotals[secondary][index] += volume;
+      }
     });
   });
 
@@ -1017,6 +1114,7 @@ function buildRowsForDay(date, day) {
   (day.exercises || []).forEach(exercise => {
     const exerciseName = (exercise.name || '').trim() || 'Oefening';
     const notes = exercise.notes || '';
+    const { primary, secondary } = resolveExerciseMuscles(exercise);
 
     (exercise.sets || []).forEach((set, index) => {
       const repsValue = Number(set.reps);
@@ -1039,6 +1137,8 @@ function buildRowsForDay(date, day) {
         date,
         day.sessionName || '',
         exerciseName,
+        primary,
+        secondary,
         index + 1,
         reps,
         weight,
@@ -1196,7 +1296,7 @@ function normalizeDateValue(value) {
     const date = new Date(raw);
     if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
   }
-  if (/^\\d{4}-\\d{2}-\\d{2}/.test(raw)) return raw.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
   return raw;
 }
 
@@ -1216,12 +1316,16 @@ function buildAllFromSheets(daysRows, setsRows) {
     if (!date) return;
     const sessionName = row[1] || '';
     const exerciseName = (row[2] || '').trim() || 'Oefening';
-    const setNumber = Number(row[3]) || 0;
-    const reps = parseMaybeNumber(row[4]);
-    const weight = parseMaybeNumber(row[5]);
-    const rpe = parseMaybeNumber(row[6]);
-    const doneRaw = row[7];
-    const notes = row[8] || '';
+    const hasMuscleColumns = row.length >= 12;
+    const primary = hasMuscleColumns ? sanitizeMuscleGroup(row[3]) : '';
+    const secondary = hasMuscleColumns ? sanitizeMuscleGroup(row[4]) : '';
+    const offset = hasMuscleColumns ? 2 : 0;
+    const setNumber = Number(row[3 + offset]) || 0;
+    const reps = parseMaybeNumber(row[4 + offset]);
+    const weight = parseMaybeNumber(row[5 + offset]);
+    const rpe = parseMaybeNumber(row[6 + offset]);
+    const doneRaw = row[7 + offset];
+    const notes = row[8 + offset] || '';
     const done = doneRaw === true || doneRaw === 'yes' || doneRaw === 'true' || doneRaw === 1 || doneRaw === '1';
 
     if (!all[date]) {
@@ -1233,12 +1337,21 @@ function buildAllFromSheets(daysRows, setsRows) {
     if (!exerciseIndex[date]) exerciseIndex[date] = {};
     if (!exerciseIndex[date][exerciseName]) {
       exerciseIndex[date][exerciseName] = {
-        exercise: { id: uid(), name: exerciseName, notes: '', sets: [] },
+        exercise: {
+          id: uid(),
+          name: exerciseName,
+          notes: '',
+          primaryGroup: primary,
+          secondaryGroup: secondary,
+          sets: []
+        },
         sets: []
       };
     }
 
     const entry = exerciseIndex[date][exerciseName];
+    if (!entry.exercise.primaryGroup && primary) entry.exercise.primaryGroup = primary;
+    if (!entry.exercise.secondaryGroup && secondary) entry.exercise.secondaryGroup = secondary;
     if (!entry.exercise.notes && notes) entry.exercise.notes = notes;
 
     entry.sets.push({
@@ -1309,6 +1422,9 @@ async function maybeAutoPull(reason) {
   if (syncState.dirty) {
     const targetDate = syncState.lastChangedDate || state.date;
     await syncDay(targetDate, { silent: true });
+    if (syncState.dirty) {
+      return;
+    }
   }
 
   await pullAllFromSheets({ silent: true, confirmOverwrite: false, skipStatus: true });
