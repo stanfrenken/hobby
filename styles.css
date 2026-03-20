@@ -290,6 +290,55 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   margin-bottom: 14px;
 }
 
+.muscle-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: 14px;
+}
+
+.muscle-stat {
+  position: relative;
+  overflow: hidden;
+  padding: 12px 14px;
+  background: linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,255,255,0.76));
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.06);
+  display: grid;
+  gap: 6px;
+}
+
+.muscle-stat::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--muscle-color, var(--accent));
+}
+
+.muscle-stat .label {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.muscle-stat .value {
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.muscle-stat .sub {
+  font-size: 0.8rem;
+  color: var(--accent-2);
+  font-weight: 600;
+}
+
+.muscle-stat.empty {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+}
+
 .dashboard .summary {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }

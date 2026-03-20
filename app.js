@@ -12,6 +12,7 @@ const emptyState = document.getElementById('emptyState');
 const dayBadge = document.getElementById('dayBadge');
 const dayExerciseSummary = document.getElementById('dayExerciseSummary');
 const dayEmpty = document.getElementById('dayEmpty');
+const primarySummary = document.getElementById('primarySummary');
 const weekPrimaryChart = document.getElementById('weekPrimaryChart');
 const weekSecondaryChart = document.getElementById('weekSecondaryChart');
 const weekPrimaryReadout = document.getElementById('weekPrimaryReadout');
@@ -41,7 +42,6 @@ const syncStatus = document.getElementById('syncStatus');
 const statExercises = document.getElementById('statExercises');
 const statSets = document.getElementById('statSets');
 const statVolume = document.getElementById('statVolume');
-const statBest = document.getElementById('statBest');
 
 const exerciseTemplate = document.getElementById('exerciseTemplate');
 const setRowTemplate = document.getElementById('setRowTemplate');
@@ -282,14 +282,46 @@ function updateSummary() {
   const totalExercises = state.exercises.length;
   const totalSets = state.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
   const totalVolume = state.exercises.reduce((sum, ex) => sum + ex.sets.reduce((s, set) => s + setVolume(set), 0), 0);
-  const bestSet = findBestSet(state.exercises.flatMap(ex => ex.sets));
 
   statExercises.textContent = totalExercises;
   statSets.textContent = totalSets;
   statVolume.textContent = formatNumber(totalVolume);
-  statBest.textContent = bestSet ? `${formatNumber(bestSet.weight)} x ${bestSet.reps}` : '-';
   if (dayBadge) dayBadge.textContent = formatLongDate(state.date);
+  renderPrimarySummary();
   renderDayExerciseSummary();
+}
+
+function renderPrimarySummary() {
+  if (!primarySummary) return;
+
+  const totals = {};
+  state.exercises.forEach(exercise => {
+    const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set), 0);
+    if (volume <= 0) return;
+    const { primary } = resolveExerciseMuscles(exercise);
+    totals[primary] = (totals[primary] || 0) + volume;
+  });
+
+  const rows = Object.entries(totals)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'nl-NL'));
+
+  if (!rows.length) {
+    primarySummary.innerHTML = '<div class="muscle-stat empty">Nog geen kg per primary muscle vandaag.</div>';
+    return;
+  }
+
+  primarySummary.innerHTML = '';
+  rows.forEach(([group, volume]) => {
+    const card = document.createElement('div');
+    card.className = 'muscle-stat';
+    card.style.setProperty('--muscle-color', CATEGORY_COLORS[group] || '#b2bec3');
+    card.innerHTML = `
+      <span class="label">${group}</span>
+      <span class="value">${formatNumber(volume)} kg</span>
+      <span class="sub">Primary volume vandaag</span>
+    `;
+    primarySummary.appendChild(card);
+  });
 }
 
 function formatSetTag(set) {
@@ -378,6 +410,22 @@ function findBestSet(sets) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 1 }).format(value);
+}
+
+function getNiceAxisMax(value, ticks = 4) {
+  const safeValue = Math.max(Number(value) || 0, 10);
+  const roughStep = safeValue / ticks;
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const normalized = roughStep / magnitude;
+
+  let niceStep = 1;
+  if (normalized <= 1) niceStep = 1;
+  else if (normalized <= 2) niceStep = 2;
+  else if (normalized <= 2.5) niceStep = 2.5;
+  else if (normalized <= 5) niceStep = 5;
+  else niceStep = 10;
+
+  return Math.ceil(safeValue / (niceStep * magnitude)) * niceStep * magnitude;
 }
 
 function parseDate(value) {
@@ -800,7 +848,7 @@ function updateChartReadout(readoutEl, hit) {
     readoutEl.textContent = 'Beweeg over de chart voor details.';
     return;
   }
-  readoutEl.textContent = `${formatShortDate(hit.date)} • ${hit.group}: ${formatNumber(hit.value)} kg`;
+  readoutEl.textContent = `${formatShortDate(hit.date)} • ${hit.group}: ${formatNumber(hit.value)} kg • Dagtotaal: ${formatNumber(hit.total)} kg`;
 }
 
 function getCanvasHit(canvas, event) {
@@ -846,7 +894,7 @@ function bindStackedChartHover(canvas, hitboxes, readoutEl) {
 
     updateChartReadout(canvas._stackedReadout, hit);
     showChartTooltip(
-      `<span class="title">${formatShortDate(hit.date)} · ${hit.group}</span><span class="value">${formatNumber(hit.value)} kg</span>`,
+      `<span class="title">${formatShortDate(hit.date)} · ${hit.group}</span><span class="value">${formatNumber(hit.value)} kg</span><span class="title">Dagtotaal: ${formatNumber(hit.total)} kg</span>`,
       position.clientX,
       position.clientY
     );
@@ -896,12 +944,12 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
   const totalsPerDay = dates.map((_, i) =>
     groups.reduce((sum, group) => sum + (totals[group]?.[i] || 0), 0)
   );
-  const maxTotal = Math.max(...totalsPerDay, 10);
+  const ticks = 4;
+  const maxTotal = getNiceAxisMax(Math.max(...totalsPerDay, 0), ticks);
   const chartHeight = h - paddingTop - paddingBottom;
   const barGap = 8;
   const chartWidth = w - paddingLeft - paddingRight;
   const barWidth = (chartWidth - barGap * (dates.length - 1)) / dates.length;
-  const ticks = 4;
 
   ctx.font = '11px Space Grotesk';
   ctx.textBaseline = 'middle';
@@ -948,15 +996,16 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
       const height = (value / maxTotal) * chartHeight;
       ctx.fillStyle = CATEGORY_COLORS[group] || '#b2bec3';
       ctx.fillRect(x, y - height, barWidth, height);
-      hitboxes.push({
-        x,
-        y: y - height,
-        width: barWidth,
-        height,
-        group,
-        value,
-        date
-      });
+        hitboxes.push({
+          x,
+          y: y - height,
+          width: barWidth,
+          height,
+          group,
+          value,
+          total: totalsPerDay[index],
+          date
+        });
       y -= height;
     });
 
