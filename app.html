@@ -1,0 +1,293 @@
+﻿<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fitness Daglog</title>
+  <link rel="stylesheet" href="styles.css?v=20260320c" />
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <div class="logo">FD</div>
+        <div>
+          <h1>Fitness Daglog</h1>
+          <p>Houd per dag je oefeningen, sets, reps en gewicht bij.</p>
+        </div>
+      </div>
+      <nav class="page-nav" aria-label="Navigatie">
+        <button id="pageLogBtn" class="page-tab active" type="button">Logboek</button>
+        <button id="pageDashboardBtn" class="page-tab" type="button">Dashboard</button>
+      </nav>
+    </header>
+
+    <main class="pages">
+      <section id="logPage" class="page active">
+        <div class="page-shell">
+          <div class="controls">
+            <label class="control">
+              <span>Datum</span>
+              <input id="dateInput" type="date" />
+            </label>
+            <label class="control">
+              <span>Sessie naam</span>
+              <input id="sessionName" type="text" placeholder="Bijv. Benen + Core" />
+            </label>
+            <label class="control">
+              <span>Lichaamsgewicht (kg)</span>
+              <input id="bodyweightInput" type="number" min="0" step="0.1" placeholder="Bijv. 82.4" />
+            </label>
+            <div class="control buttons">
+              <button id="addExercise" class="primary">Oefening toevoegen</button>
+              <button id="saveDay" class="ghost">Opslaan</button>
+            </div>
+          </div>
+
+          <div class="stack">
+            <section class="panel dashboard">
+              <div class="panel-header">
+                <h2>Vandaag</h2>
+                <div class="mini-actions">
+                  <span id="dayBadge" class="badge">-</span>
+                </div>
+              </div>
+              <div id="primarySummary" class="muscle-summary"></div>
+              <div class="summary" id="summary">
+                <div class="stat">
+                  <span class="label">Oefeningen</span>
+                  <span class="value" id="statExercises">0</span>
+                </div>
+                <div class="stat">
+                  <span class="label">Sets</span>
+                  <span class="value" id="statSets">0</span>
+                </div>
+                <div class="stat">
+                  <span class="label">Totaal volume</span>
+                  <span class="value" id="statVolume">0</span>
+                </div>
+              </div>
+              <div class="panel-header compact">
+                <h3>Oefeningen vandaag</h3>
+              </div>
+              <div id="dayExerciseSummary" class="day-exercises"></div>
+              <div id="dayEmpty" class="empty compact">
+                <p>Geen oefeningen ingevuld voor deze dag.</p>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Oefeningen</h2>
+                <div class="mini-actions">
+                  <button id="addExerciseMini" class="ghost">+ Oefening</button>
+                </div>
+              </div>
+              <div id="exerciseList" class="exercise-list"></div>
+              <div class="empty" id="emptyState">
+                <h3>Start je logboek</h3>
+                <p>Voeg je eerste oefening toe en bouw je sessie op.</p>
+                <button id="addExerciseEmpty" class="primary">Eerste oefening</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="dashboardPage" class="page">
+        <div class="dashboard-grid">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Weekvolume (primair)</h2>
+            </div>
+            <div class="progress">
+              <canvas id="weekPrimaryChart" width="360" height="190"></canvas>
+              <div id="weekPrimaryReadout" class="chart-readout">Beweeg over de chart voor details.</div>
+              <div id="weekPrimaryLegend" class="legend"></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Weekvolume (secundair)</h2>
+            </div>
+            <div class="progress">
+              <canvas id="weekSecondaryChart" width="360" height="190"></canvas>
+              <div id="weekSecondaryReadout" class="chart-readout">Beweeg over de chart voor details.</div>
+              <div id="weekSecondaryLegend" class="legend"></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Oefening focus</h2>
+              <span id="focusName" class="badge">-</span>
+            </div>
+            <div class="progress">
+              <label class="control">
+                <span>Kies oefening</span>
+                <select id="focusExerciseSelect"></select>
+              </label>
+              <canvas id="focusChart" width="360" height="180"></canvas>
+              <div id="focusMetrics" class="metrics"></div>
+              <div id="focusStartNow" class="metrics"></div>
+              <div id="focusTable" class="progress-table"></div>
+              <p id="focusEmpty" class="hint">Klik op een oefening om progress te zien.</p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Lichaamsgewicht</h2>
+            </div>
+            <div class="progress">
+              <canvas id="bodyweightChart" width="360" height="190"></canvas>
+              <p id="bodyweightHint" class="hint">Vul per dag je gewicht in om je trend te zien.</p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Google Sheets Sync</h2>
+            </div>
+            <div class="sync">
+              <label class="control">
+                <span>Web App URL</span>
+                <input id="syncUrl" type="text" placeholder="https://script.google.com/macros/s/..." />
+              </label>
+              <label class="control">
+                <span>Sheet ID</span>
+                <input id="syncSheetId" type="text" placeholder="1a2B3c4D5e6F..." />
+              </label>
+              <label class="control">
+                <span>Sync token (optioneel)</span>
+                <input id="syncToken" type="password" placeholder="Zelf gekozen token" />
+              </label>
+              <label class="control inline">
+                <input id="syncAuto" type="checkbox" />
+                <span>Auto sync bij wijzigingen</span>
+              </label>
+              <label class="control inline">
+                <input id="syncAutoPull" type="checkbox" />
+                <span>Auto ophalen bij openen</span>
+              </label>
+              <div class="control buttons">
+                <button id="syncNow" class="primary">Sync nu</button>
+                <button id="syncAll" class="ghost">Sync alles</button>
+                <button id="syncPull" class="ghost">Haal uit Sheets</button>
+                <button id="syncTest" class="ghost">Test verbinding</button>
+              </div>
+              <p id="syncStatus" class="hint">Nog niet verbonden.</p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Backup</h2>
+            </div>
+            <div class="backup">
+              <button id="exportData" class="ghost">Export JSON</button>
+              <label class="ghost file">
+                Import JSON
+                <input id="importData" type="file" accept="application/json" />
+              </label>
+              <p class="hint">Data wordt lokaal opgeslagen in je browser.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="exerciseTemplate">
+    <article class="exercise-card" data-id="">
+      <div class="exercise-head">
+        <div class="exercise-title">
+          <select class="exercise-select">
+            <option value="">Kies oefening uit lijst</option>
+          </select>
+          <div class="exercise-name-row">
+            <input class="exercise-name" type="text" placeholder="Of typ een oefening (bijv. Squat)" />
+            <button class="ghost small save-custom-exercise" type="button">Bewaar in lijst</button>
+          </div>
+        </div>
+        <div class="exercise-actions">
+          <button class="ghost small add-set">+ Set</button>
+          <button class="ghost small duplicate-set">Herhaal</button>
+          <button class="danger small remove-exercise">Verwijder</button>
+        </div>
+      </div>
+      <div class="exercise-meta">
+        <div class="exercise-left">
+          <div class="muscle-grid">
+            <label class="control">
+              <span>Primary muscle</span>
+              <select class="exercise-primary"></select>
+            </label>
+            <label class="control">
+              <span>Secondary muscle</span>
+              <select class="exercise-secondary"></select>
+            </label>
+          </div>
+          <textarea class="exercise-notes" placeholder="Notities, tempo, cues..."></textarea>
+        </div>
+        <div class="exercise-stats">
+          <div>
+            <span class="label">Volume</span>
+            <span class="value volume">0</span>
+          </div>
+          <div>
+            <span class="label">Beste set</span>
+            <span class="value best">-</span>
+          </div>
+        </div>
+      </div>
+      <div class="quick-builder">
+        <div class="quick-grid">
+          <label class="control quick-control">
+            <span>Sets</span>
+            <input class="quick-set-count" type="number" min="1" step="1" placeholder="4" />
+          </label>
+          <label class="control quick-control">
+            <span>Reps</span>
+            <input class="quick-set-reps" type="number" min="0" step="1" placeholder="10" />
+          </label>
+          <label class="control quick-control">
+            <span>Gewicht</span>
+            <input class="quick-set-weight" type="number" min="0" step="0.5" placeholder="8" />
+          </label>
+          <label class="control quick-control">
+            <span>RPE</span>
+            <input class="quick-set-rpe" type="number" min="0" max="10" step="0.5" placeholder="" />
+          </label>
+        </div>
+        <button class="ghost small apply-quick-sets" type="button">Maak identieke sets</button>
+      </div>
+      <div class="sets">
+        <div class="sets-head">
+          <span>#</span>
+          <span>Reps</span>
+          <span>Gewicht</span>
+          <span>RPE</span>
+          <span>✔</span>
+        </div>
+        <div class="sets-body"></div>
+      </div>
+    </article>
+  </template>
+
+  <template id="setRowTemplate">
+    <div class="set-row" data-id="">
+      <span class="set-index">1</span>
+      <input class="set-reps" type="number" min="0" step="1" placeholder="0" />
+      <input class="set-weight" type="number" min="0" step="0.5" placeholder="0" />
+      <input class="set-rpe" type="number" min="0" max="10" step="0.5" placeholder="" />
+      <input class="set-done" type="checkbox" />
+      <button class="remove-set" title="Verwijder set">x</button>
+    </div>
+  </template>
+
+  <script src="app.js?v=20260320c"></script>
+</body>
+</html>
