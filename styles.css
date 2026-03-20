@@ -317,10 +317,25 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   background: #fff;
   border-radius: 12px;
   border: 1px solid rgba(0,0,0,0.06);
+  margin-bottom: 10px;
 }
 
 .progress canvas.chart-hover {
   cursor: crosshair;
+}
+
+.chart-readout {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: rgba(15, 107, 102, 0.08);
+  border: 1px solid rgba(15, 107, 102, 0.14);
+  border-radius: 12px;
+  color: var(--accent-2);
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 .progress-table {
@@ -386,7 +401,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 
 .chart-tooltip {
   position: fixed;
-  z-index: 50;
+  z-index: 999;
   pointer-events: none;
   min-width: 150px;
   max-width: 220px;

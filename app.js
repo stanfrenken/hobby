@@ -14,6 +14,8 @@ const dayExerciseSummary = document.getElementById('dayExerciseSummary');
 const dayEmpty = document.getElementById('dayEmpty');
 const weekPrimaryChart = document.getElementById('weekPrimaryChart');
 const weekSecondaryChart = document.getElementById('weekSecondaryChart');
+const weekPrimaryReadout = document.getElementById('weekPrimaryReadout');
+const weekSecondaryReadout = document.getElementById('weekSecondaryReadout');
 const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
 const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
 const focusName = document.getElementById('focusName');
@@ -792,39 +794,79 @@ function showChartTooltip(content, x, y) {
   tooltip.style.top = `${y + 14}px`;
 }
 
-function bindStackedChartHover(canvas, hitboxes) {
+function updateChartReadout(readoutEl, hit) {
+  if (!readoutEl) return;
+  if (!hit) {
+    readoutEl.textContent = 'Beweeg over de chart voor details.';
+    return;
+  }
+  readoutEl.textContent = `${formatShortDate(hit.date)} • ${hit.group}: ${formatNumber(hit.value)} kg`;
+}
+
+function getCanvasHit(canvas, event) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const clientX = event.clientX ?? event.touches?.[0]?.clientX;
+  const clientY = event.clientY ?? event.touches?.[0]?.clientY;
+  if (clientX == null || clientY == null) return null;
+
+  const x = (clientX - rect.left) * scaleX;
+  const y = (clientY - rect.top) * scaleY;
+  const hit = (canvas._stackedHitboxes || []).find(box =>
+    x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height
+  );
+
+  return {
+    hit,
+    clientX,
+    clientY
+  };
+}
+
+function bindStackedChartHover(canvas, hitboxes, readoutEl) {
   if (!canvas) return;
   canvas._stackedHitboxes = hitboxes;
+  canvas._stackedReadout = readoutEl || null;
   canvas.classList.toggle('chart-hover', hitboxes.length > 0);
+  updateChartReadout(canvas._stackedReadout, null);
 
   if (canvas._hoverBound) return;
   canvas._hoverBound = true;
 
-  canvas.addEventListener('mousemove', event => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (event.clientX - rect.left) * scaleX;
-    const y = (event.clientY - rect.top) * scaleY;
-    const hit = (canvas._stackedHitboxes || []).find(box =>
-      x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height
-    );
+  const moveHandler = event => {
+    const position = getCanvasHit(canvas, event);
+    const hit = position?.hit || null;
 
     if (!hit) {
       hideChartTooltip();
-      return;
+      updateChartReadout(canvas._stackedReadout, null);
+      return false;
     }
 
+    updateChartReadout(canvas._stackedReadout, hit);
     showChartTooltip(
       `<span class="title">${formatShortDate(hit.date)} · ${hit.group}</span><span class="value">${formatNumber(hit.value)} kg</span>`,
-      event.clientX,
-      event.clientY
+      position.clientX,
+      position.clientY
     );
-  });
+    return true;
+  };
 
-  canvas.addEventListener('mouseleave', () => {
+  canvas.addEventListener('pointermove', moveHandler);
+  canvas.addEventListener('mousemove', moveHandler);
+  canvas.addEventListener('pointerdown', moveHandler);
+  canvas.addEventListener('touchstart', moveHandler, { passive: true });
+  canvas.addEventListener('touchmove', moveHandler, { passive: true });
+
+  const leaveHandler = () => {
     hideChartTooltip();
-  });
+    updateChartReadout(canvas._stackedReadout, null);
+  };
+
+  canvas.addEventListener('mouseleave', leaveHandler);
+  canvas.addEventListener('pointerleave', leaveHandler);
+  canvas.addEventListener('touchend', leaveHandler, { passive: true });
 }
 
 function drawStackedBarChart(canvas, dates, totals, options = {}) {
@@ -832,7 +874,7 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
-  const paddingLeft = 48;
+  const paddingLeft = 64;
   const paddingRight = 14;
   const paddingTop = 14;
   const paddingBottom = 30;
@@ -847,7 +889,7 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
     ctx.fillStyle = '#6a5e54';
     ctx.font = '14px Space Grotesk';
     ctx.fillText('Geen data', 14, h / 2);
-    bindStackedChartHover(canvas, []);
+    bindStackedChartHover(canvas, [], options.readoutEl);
     return;
   }
 
@@ -864,6 +906,23 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
   ctx.font = '11px Space Grotesk';
   ctx.textBaseline = 'middle';
 
+  ctx.strokeStyle = 'rgba(26,26,26,0.16)';
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.moveTo(paddingLeft, paddingTop);
+  ctx.lineTo(paddingLeft, h - paddingBottom);
+  ctx.lineTo(w - paddingRight, h - paddingBottom);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(18, h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = '700 12px Space Grotesk';
+  ctx.textAlign = 'center';
+  ctx.fillText('kg', 0, 0);
+  ctx.restore();
+
   for (let i = 0; i <= ticks; i += 1) {
     const value = (maxTotal / ticks) * i;
     const y = h - paddingBottom - (value / maxTotal) * chartHeight;
@@ -874,10 +933,11 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
     ctx.lineTo(w - paddingRight, y);
     ctx.stroke();
 
-    ctx.fillStyle = '#6a5e54';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${formatNumber(value)} kg`, paddingLeft - 6, y);
-  }
+      ctx.fillStyle = '#1a1a1a';
+      ctx.font = '600 11px Space Grotesk';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${formatNumber(value)} kg`, paddingLeft - 6, y);
+    }
 
   dates.forEach((date, index) => {
     let y = h - paddingBottom;
@@ -900,12 +960,13 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
       y -= height;
     });
 
-    ctx.fillStyle = '#6a5e54';
-    ctx.textAlign = 'center';
-    ctx.fillText(formatTinyDate(date), x + barWidth / 2, h - 10);
-  });
+      ctx.fillStyle = '#6a5e54';
+      ctx.font = '11px Space Grotesk';
+      ctx.textAlign = 'center';
+      ctx.fillText(formatTinyDate(date), x + barWidth / 2, h - 10);
+    });
 
-  bindStackedChartHover(canvas, hitboxes);
+  bindStackedChartHover(canvas, hitboxes, options.readoutEl);
 }
 
 function renderWeekCharts(all) {
@@ -915,8 +976,14 @@ function renderWeekCharts(all) {
   const primaryGroups = PRIMARY_GROUPS.filter(group => primaryTotals[group].some(value => value > 0));
   const secondaryGroups = PRIMARY_GROUPS.filter(group => secondaryTotals[group].some(value => value > 0));
 
-  drawStackedBarChart(weekPrimaryChart, dates, primaryTotals, { groups: primaryGroups });
-  drawStackedBarChart(weekSecondaryChart, dates, secondaryTotals, { groups: secondaryGroups });
+  drawStackedBarChart(weekPrimaryChart, dates, primaryTotals, {
+    groups: primaryGroups,
+    readoutEl: weekPrimaryReadout
+  });
+  drawStackedBarChart(weekSecondaryChart, dates, secondaryTotals, {
+    groups: secondaryGroups,
+    readoutEl: weekSecondaryReadout
+  });
 
   renderLegend(weekPrimaryLegend, primaryGroups);
   renderLegend(weekSecondaryLegend, secondaryGroups);
