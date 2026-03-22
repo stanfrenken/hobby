@@ -8,6 +8,7 @@ const ROUTINE_UI_KEY = 'fitnessLog.routineDay.v1';
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
+const routineSourceDaySelect = document.getElementById('routineSourceDay');
 const pageLogBtn = document.getElementById('pageLogBtn');
 const pageDashboardBtn = document.getElementById('pageDashboardBtn');
 const pageRoutinesBtn = document.getElementById('pageRoutinesBtn');
@@ -225,9 +226,34 @@ function getRoutineDayLabel(dayKey) {
   return ROUTINE_DAYS.find(day => day.key === dayKey)?.label || 'Dag';
 }
 
-function updateRoutineApplyButton() {
+function populateRoutineSourceDaySelect() {
+  if (!routineSourceDaySelect || routineSourceDaySelect.options.length) return;
+  ROUTINE_DAYS.forEach(day => {
+    const option = document.createElement('option');
+    option.value = day.key;
+    option.textContent = day.label;
+    routineSourceDaySelect.appendChild(option);
+  });
+}
+
+function getSelectedRoutineSourceDay() {
+  populateRoutineSourceDaySelect();
+  const selected = routineSourceDaySelect?.value || '';
+  if (ROUTINE_DAYS.some(day => day.key === selected)) return selected;
+  return getRoutineDayKeyFromDate(state.date || todayISO());
+}
+
+function updateRoutineApplyButton(options = {}) {
+  populateRoutineSourceDaySelect();
+  const targetKey = options.syncSelect === true
+    ? getRoutineDayKeyFromDate(state.date || todayISO())
+    : getSelectedRoutineSourceDay();
+
+  if (routineSourceDaySelect) {
+    routineSourceDaySelect.value = targetKey;
+  }
   if (!addRoutineToDayBtn) return;
-  const label = getRoutineDayLabel(getRoutineDayKeyFromDate(state.date || todayISO())).toLowerCase();
+  const label = getRoutineDayLabel(targetKey).toLowerCase();
   addRoutineToDayBtn.textContent = `Voeg vaste oefeningen van ${label} toe`;
 }
 
@@ -309,7 +335,7 @@ function loadDay(date) {
 
   sessionNameInput.value = state.sessionName;
   if (bodyweightInput) bodyweightInput.value = state.bodyweight === '' ? '' : state.bodyweight;
-  updateRoutineApplyButton();
+  updateRoutineApplyButton({ syncSelect: true });
 }
 
 function persist() {
@@ -699,7 +725,7 @@ function handleRoutineInputChange(target) {
 
 function addRoutineExercisesToCurrentDay() {
   const routines = loadRoutines();
-  const dayKey = getRoutineDayKeyFromDate(state.date);
+  const dayKey = getSelectedRoutineSourceDay();
   const presets = routines[dayKey] || [];
 
   if (!presets.length) {
@@ -2606,6 +2632,12 @@ bodyweightInput.addEventListener('input', () => {
   state.bodyweight = bodyweightInput.value;
   persist();
 });
+
+if (routineSourceDaySelect) {
+  routineSourceDaySelect.addEventListener('change', () => {
+    updateRoutineApplyButton();
+  });
+}
 
 if (routineDayTabs) {
   routineDayTabs.addEventListener('click', event => {
