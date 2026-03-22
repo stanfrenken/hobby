@@ -1,8 +1,10 @@
 ﻿const SHEET_DAYS = 'Days';
 const SHEET_SETS = 'Sets';
+const SHEET_ROUTINES = 'Routines';
 
 const DAYS_HEADERS = ['Date', 'Session', 'Exercises', 'Sets', 'Total Volume', 'Best Set', 'Bodyweight'];
 const SETS_HEADERS = ['Date', 'Session', 'Exercise', 'Exercise ID', 'Primary Muscle', 'Secondary Muscle', 'Set', 'Reps', 'Weight', 'RPE', 'Done', 'Notes', 'Volume'];
+const ROUTINE_HEADERS = ['Day Key', 'Day Label', 'Exercise', 'Primary Muscle', 'Secondary Muscle'];
 
 function doPost(e) {
   try {
@@ -19,6 +21,7 @@ function doPost(e) {
     const ss = SpreadsheetApp.openById(data.sheetId);
     const daysSheet = getOrCreate_(ss, SHEET_DAYS, DAYS_HEADERS);
     const setsSheet = getOrCreate_(ss, SHEET_SETS, SETS_HEADERS);
+    const routinesSheet = getOrCreate_(ss, SHEET_ROUTINES, ROUTINE_HEADERS);
 
     if (data.action === 'test') {
       return json_({ ok: true });
@@ -27,11 +30,12 @@ function doPost(e) {
     if (data.action === 'pullAll') {
       const days = fetchRows_(daysSheet);
       const sets = fetchRows_(setsSheet);
-      return json_({ ok: true, days, sets });
+      const routines = fetchRows_(routinesSheet);
+      return json_({ ok: true, days, sets, routines });
     }
 
     if (data.action === 'syncAll') {
-      handleSyncAll_(daysSheet, setsSheet, data.days || []);
+      handleSyncAll_(daysSheet, setsSheet, routinesSheet, data.days || [], data.routines || []);
       return json_({ ok: true });
     }
 
@@ -46,9 +50,10 @@ function doPost(e) {
   }
 }
 
-function handleSyncAll_(daysSheet, setsSheet, days) {
+function handleSyncAll_(daysSheet, setsSheet, routinesSheet, days, routines) {
   resetSheet_(daysSheet, DAYS_HEADERS);
   resetSheet_(setsSheet, SETS_HEADERS);
+  resetSheet_(routinesSheet, ROUTINE_HEADERS);
 
   const allDayRows = [];
   const allSetRows = [];
@@ -58,6 +63,7 @@ function handleSyncAll_(daysSheet, setsSheet, days) {
     if (Array.isArray(day.rowsSets)) allSetRows.push(...day.rowsSets);
   });
 
+  appendRows_(routinesSheet, routines || []);
   appendRows_(daysSheet, allDayRows);
   appendRows_(setsSheet, allSetRows);
 }

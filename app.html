@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260320c" />
+  <link rel="stylesheet" href="styles.css?v=20260322a" />
 </head>
 <body>
   <div class="bg"></div>
@@ -20,6 +20,7 @@
       <nav class="page-nav" aria-label="Navigatie">
         <button id="pageLogBtn" class="page-tab active" type="button">Logboek</button>
         <button id="pageDashboardBtn" class="page-tab" type="button">Dashboard</button>
+        <button id="pageRoutinesBtn" class="page-tab" type="button">Vaste dagen</button>
       </nav>
     </header>
 
@@ -41,6 +42,7 @@
             </label>
             <div class="control buttons">
               <button id="addExercise" class="primary">Oefening toevoegen</button>
+              <button id="addRoutineToDayBtn" class="ghost">Voeg vaste oefeningen toe</button>
               <button id="saveDay" class="ghost">Opslaan</button>
             </div>
           </div>
@@ -197,6 +199,25 @@
           </section>
         </div>
       </section>
+
+      <section id="routinesPage" class="page">
+        <div class="page-shell">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Vaste Oefeningen Per Dag</h2>
+                <p>Kies een weekdag en stel je vaste oefeningen in.</p>
+              </div>
+              <button id="addRoutineExerciseBtn" class="primary" type="button">+ Vaste oefening</button>
+            </div>
+            <div id="routineDayTabs" class="day-tabs"></div>
+            <div id="routineList" class="routine-list"></div>
+            <div id="routineEmpty" class="empty compact">
+              <p>Voor deze dag heb je nog geen vaste oefeningen ingesteld.</p>
+            </div>
+          </section>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -288,6 +309,28 @@
     </div>
   </template>
 
-  <script src="app.js?v=20260320c"></script>
+  <template id="routineTemplate">
+    <article class="routine-card" data-id="">
+      <div class="routine-head">
+        <select class="routine-select">
+          <option value="">Kies oefening uit lijst</option>
+        </select>
+        <input class="routine-name" type="text" placeholder="Of typ een vaste oefening" />
+        <button class="danger small remove-routine" type="button">Verwijder</button>
+      </div>
+      <div class="muscle-grid">
+        <label class="control">
+          <span>Primary muscle</span>
+          <select class="routine-primary"></select>
+        </label>
+        <label class="control">
+          <span>Secondary muscle</span>
+          <select class="routine-secondary"></select>
+        </label>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js?v=20260322a"></script>
 </body>
 </html>

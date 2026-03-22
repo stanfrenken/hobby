@@ -1,16 +1,21 @@
 ﻿const STORAGE_KEY = 'fitnessLog.v1';
 const SYNC_KEY = 'fitnessLog.sync.v1';
 const EXERCISE_LIBRARY_KEY = 'fitnessLog.exerciseLibrary.v1';
+const ROUTINES_KEY = 'fitnessLog.routines.v1';
 const UI_PAGE_KEY = 'fitnessLog.uiPage.v1';
+const ROUTINE_UI_KEY = 'fitnessLog.routineDay.v1';
 
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
 const pageLogBtn = document.getElementById('pageLogBtn');
 const pageDashboardBtn = document.getElementById('pageDashboardBtn');
+const pageRoutinesBtn = document.getElementById('pageRoutinesBtn');
 const logPage = document.getElementById('logPage');
 const dashboardPage = document.getElementById('dashboardPage');
+const routinesPage = document.getElementById('routinesPage');
 const addExerciseBtn = document.getElementById('addExercise');
+const addRoutineToDayBtn = document.getElementById('addRoutineToDayBtn');
 const addExerciseMiniBtn = document.getElementById('addExerciseMini');
 const addExerciseEmptyBtn = document.getElementById('addExerciseEmpty');
 const saveDayBtn = document.getElementById('saveDay');
@@ -35,6 +40,10 @@ const focusTable = document.getElementById('focusTable');
 const focusEmpty = document.getElementById('focusEmpty');
 const bodyweightChart = document.getElementById('bodyweightChart');
 const bodyweightHint = document.getElementById('bodyweightHint');
+const routineDayTabs = document.getElementById('routineDayTabs');
+const routineList = document.getElementById('routineList');
+const routineEmpty = document.getElementById('routineEmpty');
+const addRoutineExerciseBtn = document.getElementById('addRoutineExerciseBtn');
 const exportBtn = document.getElementById('exportData');
 const importInput = document.getElementById('importData');
 const syncUrlInput = document.getElementById('syncUrl');
@@ -54,6 +63,7 @@ const statVolume = document.getElementById('statVolume');
 
 const exerciseTemplate = document.getElementById('exerciseTemplate');
 const setRowTemplate = document.getElementById('setRowTemplate');
+const routineTemplate = document.getElementById('routineTemplate');
 
 const state = {
   date: '',
@@ -61,6 +71,16 @@ const state = {
   bodyweight: '',
   exercises: []
 };
+
+const ROUTINE_DAYS = [
+  { key: 'monday', label: 'Maandag', index: 1 },
+  { key: 'tuesday', label: 'Dinsdag', index: 2 },
+  { key: 'wednesday', label: 'Woensdag', index: 3 },
+  { key: 'thursday', label: 'Donderdag', index: 4 },
+  { key: 'friday', label: 'Vrijdag', index: 5 },
+  { key: 'saturday', label: 'Zaterdag', index: 6 },
+  { key: 'sunday', label: 'Zondag', index: 0 }
+];
 
 const syncState = {
   url: '',
@@ -72,6 +92,7 @@ const syncState = {
   dirty: false,
   lastLocalChange: 0,
   lastChangedDate: '',
+  lastChangedScope: 'day',
   lastPull: 0,
   pullInFlight: false,
   pushInFlight: false,
@@ -83,11 +104,13 @@ const AUTO_PULL_MIN_GAP_MS = 8000;
 const AUTO_PULL_DIRTY_GRACE_MS = 1500;
 
 function setActivePage(page, options = {}) {
-  const nextPage = page === 'dashboard' ? 'dashboard' : 'log';
+  const nextPage = page === 'dashboard' || page === 'routines' ? page : 'log';
   if (logPage) logPage.classList.toggle('active', nextPage === 'log');
   if (dashboardPage) dashboardPage.classList.toggle('active', nextPage === 'dashboard');
+  if (routinesPage) routinesPage.classList.toggle('active', nextPage === 'routines');
   if (pageLogBtn) pageLogBtn.classList.toggle('active', nextPage === 'log');
   if (pageDashboardBtn) pageDashboardBtn.classList.toggle('active', nextPage === 'dashboard');
+  if (pageRoutinesBtn) pageRoutinesBtn.classList.toggle('active', nextPage === 'routines');
   if (!options.skipPersist) {
     localStorage.setItem(UI_PAGE_KEY, nextPage);
   }
@@ -98,7 +121,7 @@ function setActivePage(page, options = {}) {
 
 function getPreferredPage() {
   const saved = localStorage.getItem(UI_PAGE_KEY);
-  return saved === 'dashboard' ? 'dashboard' : 'log';
+  return saved === 'dashboard' || saved === 'routines' ? saved : 'log';
 }
 
 function todayISO() {
@@ -152,6 +175,60 @@ function loadCustomExerciseLibrary() {
 
 function saveCustomExerciseLibrary(items) {
   localStorage.setItem(EXERCISE_LIBRARY_KEY, JSON.stringify(items));
+}
+
+function createEmptyRoutines() {
+  return ROUTINE_DAYS.reduce((acc, day) => {
+    acc[day.key] = [];
+    return acc;
+  }, {});
+}
+
+function normalizeRoutineState(data) {
+  const normalized = createEmptyRoutines();
+  if (!data || typeof data !== 'object') return normalized;
+
+  ROUTINE_DAYS.forEach(day => {
+    const list = Array.isArray(data[day.key]) ? data[day.key] : [];
+    normalized[day.key] = list.map(item => ({
+      id: item?.id || uid(),
+      name: String(item?.name || '').trim(),
+      primaryGroup: sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || '',
+      secondaryGroup: sanitizeMuscleGroup(item?.secondaryGroup) || sanitizeMuscleGroup(item?.secondary) || ''
+    }));
+  });
+
+  return normalized;
+}
+
+function loadRoutines() {
+  const raw = localStorage.getItem(ROUTINES_KEY);
+  if (!raw) return createEmptyRoutines();
+  try {
+    return normalizeRoutineState(JSON.parse(raw));
+  } catch {
+    return createEmptyRoutines();
+  }
+}
+
+function saveRoutines(routines) {
+  localStorage.setItem(ROUTINES_KEY, JSON.stringify(normalizeRoutineState(routines)));
+}
+
+function getRoutineDayKeyFromDate(value) {
+  const date = parseDate(value) || new Date();
+  const match = ROUTINE_DAYS.find(day => day.index === date.getDay());
+  return match?.key || 'monday';
+}
+
+function getRoutineDayLabel(dayKey) {
+  return ROUTINE_DAYS.find(day => day.key === dayKey)?.label || 'Dag';
+}
+
+function updateRoutineApplyButton() {
+  if (!addRoutineToDayBtn) return;
+  const label = getRoutineDayLabel(getRoutineDayKeyFromDate(state.date || todayISO())).toLowerCase();
+  addRoutineToDayBtn.textContent = `Voeg vaste oefeningen van ${label} toe`;
 }
 
 function normalizeAllData(data) {
@@ -232,6 +309,7 @@ function loadDay(date) {
 
   sessionNameInput.value = state.sessionName;
   if (bodyweightInput) bodyweightInput.value = state.bodyweight === '' ? '' : state.bodyweight;
+  updateRoutineApplyButton();
 }
 
 function persist() {
@@ -242,6 +320,7 @@ function persist() {
   syncState.dirty = true;
   syncState.lastLocalChange = Date.now();
   syncState.lastChangedDate = state.date;
+  syncState.lastChangedScope = 'day';
   scheduleAutoSync();
 }
 
@@ -462,6 +541,195 @@ function renderExercises() {
   });
 
   updateSummary();
+}
+
+function applyRoutineProfile(item, card, profile, catalog) {
+  const nameInput = card?.querySelector('.routine-name');
+  const selectInput = card?.querySelector('.routine-select');
+  const primarySelect = card?.querySelector('.routine-primary');
+  const secondarySelect = card?.querySelector('.routine-secondary');
+
+  if (!profile) {
+    if (selectInput) selectInput.value = '';
+    return;
+  }
+
+  item.name = profile.name;
+  item.primaryGroup = profile.primary || '';
+  item.secondaryGroup = profile.secondary && profile.secondary !== item.primaryGroup ? profile.secondary : '';
+
+  if (nameInput) nameInput.value = item.name;
+  if (selectInput) {
+    const exact = (catalog || []).find(entry => normalizeExerciseName(entry.name) === normalizeExerciseName(item.name));
+    selectInput.value = exact ? exact.name : '';
+  }
+  if (primarySelect) primarySelect.value = item.primaryGroup || 'Automatisch';
+  if (secondarySelect) secondarySelect.value = item.secondaryGroup || 'Geen';
+}
+
+function getStoredRoutineDay() {
+  const saved = localStorage.getItem(ROUTINE_UI_KEY);
+  if (ROUTINE_DAYS.some(day => day.key === saved)) return saved;
+  return getRoutineDayKeyFromDate(state.date || todayISO());
+}
+
+function persistRoutines(routines, options = {}) {
+  saveRoutines(routines);
+  syncState.dirty = true;
+  syncState.lastLocalChange = Date.now();
+  syncState.lastChangedDate = state.date;
+  syncState.lastChangedScope = 'routines';
+  if (options.refreshLogbook === true) renderExercises();
+  if (options.rerenderRoutine !== false) renderRoutinePage();
+  scheduleAutoSync();
+}
+
+function setSelectedRoutineDay(dayKey, options = {}) {
+  selectedRoutineDay = ROUTINE_DAYS.some(day => day.key === dayKey) ? dayKey : 'monday';
+  if (!options.skipPersist) {
+    localStorage.setItem(ROUTINE_UI_KEY, selectedRoutineDay);
+  }
+  renderRoutinePage();
+}
+
+function renderRoutinePage() {
+  if (!routineDayTabs || !routineList || !routineEmpty) return;
+
+  const routines = loadRoutines();
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+
+  routineDayTabs.innerHTML = '';
+  ROUTINE_DAYS.forEach(day => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = day.key === selectedRoutineDay ? 'day-chip active' : 'day-chip';
+    button.dataset.day = day.key;
+    button.textContent = day.label;
+    routineDayTabs.appendChild(button);
+  });
+
+  routineList.innerHTML = '';
+  const items = routines[selectedRoutineDay] || [];
+  routineEmpty.style.display = items.length ? 'none' : 'block';
+
+  items.forEach(item => {
+    const card = routineTemplate.content.firstElementChild.cloneNode(true);
+    card.dataset.id = item.id;
+
+    const selectInput = card.querySelector('.routine-select');
+    const nameInput = card.querySelector('.routine-name');
+    const primarySelect = card.querySelector('.routine-primary');
+    const secondarySelect = card.querySelector('.routine-secondary');
+
+    populateExerciseSelect(selectInput, catalog, item.name);
+    nameInput.value = item.name;
+    populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
+    populateMuscleSelect(secondarySelect, SECONDARY_SELECT_OPTIONS);
+    const profile = getAutoExerciseProfile(item.name, catalog);
+    primarySelect.value = item.primaryGroup || profile?.primary || 'Automatisch';
+    secondarySelect.value = item.secondaryGroup || profile?.secondary || 'Geen';
+
+    routineList.appendChild(card);
+  });
+}
+
+function addRoutineExercise() {
+  const routines = loadRoutines();
+  routines[selectedRoutineDay].push({
+    id: uid(),
+    name: '',
+    primaryGroup: '',
+    secondaryGroup: ''
+  });
+  persistRoutines(routines);
+  requestAnimationFrame(() => {
+    const lastInput = routineList?.querySelector('.routine-card:last-child .routine-name');
+    if (lastInput) lastInput.focus();
+  });
+}
+
+function removeRoutineExercise(routineId) {
+  const routines = loadRoutines();
+  routines[selectedRoutineDay] = (routines[selectedRoutineDay] || []).filter(item => item.id !== routineId);
+  persistRoutines(routines);
+}
+
+function handleRoutineInputChange(target) {
+  const card = target.closest('.routine-card');
+  if (!card) return;
+
+  const routines = loadRoutines();
+  const item = (routines[selectedRoutineDay] || []).find(entry => entry.id === card.dataset.id);
+  if (!item) return;
+
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+
+  if (target.classList.contains('routine-name')) {
+    const profile = getAutoExerciseProfile(target.value, catalog);
+    if (profile) {
+      applyRoutineProfile(item, card, profile, catalog);
+    } else {
+      item.name = target.value;
+      applyRoutineProfile(item, card, null, catalog);
+    }
+  }
+
+  if (target.classList.contains('routine-select') && target.value) {
+    const profile = getAutoExerciseProfile(target.value, catalog);
+    applyRoutineProfile(item, card, profile, catalog);
+  }
+
+  if (target.classList.contains('routine-primary')) {
+    item.primaryGroup = target.value === 'Automatisch' ? '' : target.value;
+    if (item.secondaryGroup && item.secondaryGroup === item.primaryGroup) {
+      item.secondaryGroup = '';
+      const secondaryEl = card.querySelector('.routine-secondary');
+      if (secondaryEl) secondaryEl.value = 'Geen';
+    }
+  }
+
+  if (target.classList.contains('routine-secondary')) {
+    const next = target.value === 'Geen' ? '' : target.value;
+    item.secondaryGroup = next === item.primaryGroup ? '' : next;
+    if (item.secondaryGroup === '') target.value = 'Geen';
+  }
+
+  persistRoutines(routines, { rerenderRoutine: false });
+}
+
+function addRoutineExercisesToCurrentDay() {
+  const routines = loadRoutines();
+  const dayKey = getRoutineDayKeyFromDate(state.date);
+  const presets = routines[dayKey] || [];
+
+  if (!presets.length) {
+    alert(`Er staan nog geen vaste oefeningen voor ${getRoutineDayLabel(dayKey)}.`);
+    return;
+  }
+
+  const existing = new Set(state.exercises.map(ex => normalizeExerciseName(ex.name)));
+  const toAdd = presets.filter(item => !existing.has(normalizeExerciseName(item.name)));
+
+  if (!toAdd.length) {
+    alert('Alle vaste oefeningen van deze dag staan al in je logboek.');
+    return;
+  }
+
+  toAdd.forEach(item => {
+    state.exercises.push({
+      id: uid(),
+      name: item.name,
+      notes: '',
+      primaryGroup: item.primaryGroup || '',
+      secondaryGroup: item.secondaryGroup || '',
+      sets: [newSet()]
+    });
+  });
+
+  activeExerciseId = state.exercises[state.exercises.length - 1]?.id || activeExerciseId;
+  renderExercises();
+  persist();
+  flashButtonLabel(addRoutineToDayBtn, `+${toAdd.length} toegevoegd`, 1200);
 }
 
 function updateExerciseStats(exerciseId, cardEl) {
@@ -1049,6 +1317,15 @@ function getExerciseCatalog(all) {
     byName.set(normalizeExerciseName(item.name), { ...item });
   });
 
+  Object.values(loadRoutines()).flat().forEach(item => {
+    if (!item?.name) return;
+    byName.set(normalizeExerciseName(item.name), {
+      name: item.name,
+      primary: item.primaryGroup || '',
+      secondary: item.secondaryGroup || ''
+    });
+  });
+
   Object.entries(all || {})
     .sort(([a], [b]) => a.localeCompare(b))
     .forEach(([, day]) => {
@@ -1365,6 +1642,7 @@ function updateFocusExerciseSelector(all) {
 let activeExerciseId = null;
 let focusExerciseName = '';
 let chartTooltip = null;
+let selectedRoutineDay = 'monday';
 
 function ensureActiveExercise() {
   if (!state.exercises.length) {
@@ -1714,7 +1992,13 @@ function flashSaved() {
 function exportData() {
   const all = loadAll();
   all[state.date] = cloneState();
-  const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
+  const payload = {
+    version: 2,
+    days: all,
+    routines: loadRoutines(),
+    customExercises: loadCustomExerciseLibrary()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = `fitness-log-${todayISO()}.json`;
@@ -1727,9 +2011,13 @@ function importData(file) {
   reader.onload = () => {
     try {
       const data = JSON.parse(reader.result);
-      saveAll(data);
+      const nextDays = data?.days && typeof data.days === 'object' ? data.days : data;
+      saveAll(nextDays);
+      if (data?.routines) saveRoutines(data.routines);
+      if (Array.isArray(data?.customExercises)) saveCustomExerciseLibrary(data.customExercises);
       loadDay(state.date);
       renderExercises();
+      renderRoutinePage();
       refreshProgress();
     } catch {
       alert('Kon JSON niet lezen.');
@@ -1870,6 +2158,41 @@ function buildPayloadForAll(all) {
     });
 }
 
+function buildRoutineRows(routines) {
+  const rows = [];
+  ROUTINE_DAYS.forEach(day => {
+    (routines?.[day.key] || []).forEach(item => {
+      if (!(item?.name || '').trim()) return;
+      const resolved = resolveExerciseMuscles(item);
+      rows.push([
+        day.key,
+        day.label,
+        item.name.trim(),
+        resolved.primary,
+        resolved.secondary
+      ]);
+    });
+  });
+  return rows;
+}
+
+function buildRoutinesFromSheets(rows) {
+  const routines = createEmptyRoutines();
+  (rows || []).forEach(row => {
+    const dayKey = String(row[0] || '').trim().toLowerCase();
+    if (!ROUTINE_DAYS.some(day => day.key === dayKey)) return;
+    const name = String(row[2] || '').trim();
+    if (!name) return;
+    routines[dayKey].push({
+      id: uid(),
+      name,
+      primaryGroup: sanitizeMuscleGroup(row[3]) || '',
+      secondaryGroup: sanitizeMuscleGroup(row[4]) || ''
+    });
+  });
+  return normalizeRoutineState(routines);
+}
+
 async function postSync(payload) {
   try {
     const response = await fetch(syncState.url, {
@@ -1919,6 +2242,7 @@ async function syncDay(dateOverride, options = {}) {
   syncState.pushInFlight = false;
   if (result.ok) {
     syncState.dirty = false;
+    syncState.lastChangedScope = 'day';
     if (!options.silent) updateSyncStatus(`Gesynct: ${targetDate}`);
   }
 }
@@ -1932,6 +2256,7 @@ async function syncAll() {
   const all = loadAll();
   all[state.date] = cloneState();
   const days = buildPayloadForAll(all);
+  const routines = buildRoutineRows(loadRoutines());
 
   updateSyncStatus('Alles syncen...');
   syncState.pushInFlight = true;
@@ -1939,11 +2264,13 @@ async function syncAll() {
     action: 'syncAll',
     sheetId: syncState.sheetId,
     token: syncState.token,
-    days
+    days,
+    routines
   });
   syncState.pushInFlight = false;
   if (result.ok) {
     syncState.dirty = false;
+    syncState.lastChangedScope = 'day';
     updateSyncStatus('Alles gesynct.');
   }
 }
@@ -1971,6 +2298,10 @@ function scheduleAutoSync() {
 
   if (syncState.debounceId) clearTimeout(syncState.debounceId);
   syncState.debounceId = setTimeout(() => {
+    if (syncState.lastChangedScope === 'routines') {
+      syncAll();
+      return;
+    }
     const targetDate = syncState.lastChangedDate || state.date;
     syncDay(targetDate, { silent: true });
   }, 1200);
@@ -2147,8 +2478,9 @@ function buildAllFromSheets(daysRows, setsRows) {
 
 function shouldProtectLocalDay() {
   const focusedInsideExercises = !!(document.activeElement && exerciseList.contains(document.activeElement));
+  const focusedInsideRoutines = !!(document.activeElement && routineList && routineList.contains(document.activeElement));
   const recentlyEdited = Date.now() - syncState.lastLocalChange < 30000;
-  return focusedInsideExercises || recentlyEdited || syncState.dirty;
+  return focusedInsideExercises || focusedInsideRoutines || recentlyEdited || syncState.dirty;
 }
 
 function mergeCurrentLocalDayIntoAll(all) {
@@ -2157,6 +2489,7 @@ function mergeCurrentLocalDayIntoAll(all) {
   const localDay = cloneState();
   all[state.date] = {
     sessionName: localDay.sessionName || '',
+    bodyweight: localDay.bodyweight ?? '',
     exercises: localDay.exercises
   };
 
@@ -2188,11 +2521,17 @@ async function pullAllFromSheets(options = {}) {
   syncState.pullInFlight = false;
   if (!result.ok) return;
 
+  const hasRoutinesPayload = !!(result.data && Object.prototype.hasOwnProperty.call(result.data, 'routines'));
+  if (hasRoutinesPayload) {
+    saveRoutines(buildRoutinesFromSheets(result.data?.routines || []));
+  }
   const all = mergeCurrentLocalDayIntoAll(buildAllFromSheets(result.data?.days || [], result.data?.sets || []));
   saveAll(all);
   syncState.dirty = false;
+  syncState.lastChangedScope = 'day';
   loadDay(state.date);
   renderExercises();
+  renderRoutinePage();
   refreshProgress();
   syncState.lastPull = Date.now();
   if (!skipStatus) updateSyncStatus('Data opgehaald.');
@@ -2203,14 +2542,19 @@ async function maybeAutoPull(reason) {
   if (!hasSyncConfig()) return;
   if (syncState.pullInFlight || syncState.pushInFlight) return;
   if (document.activeElement && exerciseList.contains(document.activeElement)) return;
+  if (document.activeElement && routineList && routineList.contains(document.activeElement)) return;
 
   const now = Date.now();
   if (reason === 'interval' && now - syncState.lastPull < AUTO_PULL_MIN_GAP_MS) return;
   if (syncState.dirty && now - syncState.lastLocalChange < AUTO_PULL_DIRTY_GRACE_MS) return;
 
   if (syncState.dirty) {
-    const targetDate = syncState.lastChangedDate || state.date;
-    await syncDay(targetDate, { silent: true });
+    if (syncState.lastChangedScope === 'routines') {
+      await syncAll();
+    } else {
+      const targetDate = syncState.lastChangedDate || state.date;
+      await syncDay(targetDate, { silent: true });
+    }
     if (syncState.dirty) {
       return;
     }
@@ -2220,17 +2564,33 @@ async function maybeAutoPull(reason) {
 }
 
 
-pageLogBtn.addEventListener('click', () => {
-  setActivePage('log');
-});
+if (pageLogBtn) {
+  pageLogBtn.addEventListener('click', () => {
+    if (logPage && !logPage.classList.contains('active')) {
+      renderExercises();
+      updateRoutineApplyButton();
+    }
+    setActivePage('log');
+  });
+}
 
-pageDashboardBtn.addEventListener('click', () => {
-  setActivePage('dashboard');
-});
+if (pageDashboardBtn) {
+  pageDashboardBtn.addEventListener('click', () => {
+    setActivePage('dashboard');
+  });
+}
+
+if (pageRoutinesBtn) {
+  pageRoutinesBtn.addEventListener('click', () => {
+    setActivePage('routines');
+  });
+}
 
 addExerciseBtn.addEventListener('click', addExercise);
 addExerciseMiniBtn.addEventListener('click', addExercise);
 addExerciseEmptyBtn.addEventListener('click', addExercise);
+if (addRoutineToDayBtn) addRoutineToDayBtn.addEventListener('click', addRoutineExercisesToCurrentDay);
+if (addRoutineExerciseBtn) addRoutineExerciseBtn.addEventListener('click', addRoutineExercise);
 
 saveDayBtn.addEventListener('click', () => {
   persist();
@@ -2246,6 +2606,25 @@ bodyweightInput.addEventListener('input', () => {
   state.bodyweight = bodyweightInput.value;
   persist();
 });
+
+if (routineDayTabs) {
+  routineDayTabs.addEventListener('click', event => {
+    const button = event.target.closest('[data-day]');
+    if (!button) return;
+    setSelectedRoutineDay(button.dataset.day);
+  });
+}
+
+if (routineList) {
+  routineList.addEventListener('input', event => handleRoutineInputChange(event.target));
+  routineList.addEventListener('change', event => handleRoutineInputChange(event.target));
+  routineList.addEventListener('click', event => {
+    if (event.target.classList.contains('remove-routine')) {
+      const card = event.target.closest('.routine-card');
+      if (card) removeRoutineExercise(card.dataset.id);
+    }
+  });
+}
 
 exerciseList.addEventListener('input', event => handleInputChange(event.target));
 exerciseList.addEventListener('change', event => handleInputChange(event.target));
@@ -2362,10 +2741,12 @@ dateInput.addEventListener('change', () => {
 function init() {
   loadSyncConfig();
   setActivePage(getPreferredPage(), { skipScroll: true });
+  selectedRoutineDay = getStoredRoutineDay();
   const today = todayISO();
   dateInput.value = today;
   loadDay(today);
   renderExercises();
+  renderRoutinePage();
   refreshProgress();
   maybeAutoPull('init');
   if (!syncState.autoPullIntervalId) {
