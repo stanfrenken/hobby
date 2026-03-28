@@ -2,7 +2,7 @@
 const SHEET_SETS = 'Sets';
 const SHEET_ROUTINES = 'Routines';
 
-const DAYS_HEADERS = ['Date', 'Session', 'Exercises', 'Sets', 'Total Volume', 'Best Set', 'Bodyweight'];
+const DAYS_HEADERS = ['Date', 'Session', 'Exercises', 'Sets', 'Total Volume', 'Best Set', 'Bodyweight', 'Updated At'];
 const SETS_HEADERS = ['Date', 'Session', 'Exercise', 'Exercise ID', 'Primary Muscle', 'Secondary Muscle', 'Set', 'Reps', 'Weight', 'RPE', 'Done', 'Notes', 'Volume'];
 const ROUTINE_HEADERS = ['Day Key', 'Day Label', 'Exercise', 'Primary Muscle', 'Secondary Muscle'];
 

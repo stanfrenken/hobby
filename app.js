@@ -70,8 +70,10 @@ const state = {
   date: '',
   sessionName: '',
   bodyweight: '',
+  updatedAt: 0,
   exercises: []
 };
+const sessionProtectedDates = new Set();
 
 const ROUTINE_DAYS = [
   { key: 'monday', label: 'Maandag', index: 1 },
@@ -289,6 +291,7 @@ function normalizeAllData(data) {
       normalized[date] = {
         sessionName: day.sessionName || '',
         bodyweight: day.bodyweight ?? '',
+        updatedAt: Number(day.updatedAt) || 0,
         exercises: []
       };
     }
@@ -297,6 +300,9 @@ function normalizeAllData(data) {
     }
     if ((normalized[date].bodyweight === '' || normalized[date].bodyweight === undefined) && day.bodyweight !== undefined) {
       normalized[date].bodyweight = day.bodyweight;
+    }
+    if ((Number(day.updatedAt) || 0) > (Number(normalized[date].updatedAt) || 0)) {
+      normalized[date].updatedAt = Number(day.updatedAt) || 0;
     }
     normalized[date].exercises.push(...mappedExercises);
   });
@@ -308,6 +314,7 @@ function cloneState() {
   return JSON.parse(JSON.stringify({
     sessionName: state.sessionName,
     bodyweight: state.bodyweight,
+    updatedAt: state.updatedAt || 0,
     exercises: state.exercises
   }));
 }
@@ -318,6 +325,7 @@ function loadDay(date) {
   state.date = date;
   state.sessionName = day?.sessionName || '';
   state.bodyweight = day?.bodyweight ?? '';
+  state.updatedAt = Number(day?.updatedAt) || 0;
   state.exercises = (day?.exercises || []).map(ex => ({
     id: ex.id || uid(),
     name: ex.name || '',
@@ -339,10 +347,12 @@ function loadDay(date) {
 }
 
 function persist() {
+  state.updatedAt = Date.now();
   const all = loadAll();
   all[state.date] = cloneState();
   saveAll(all);
   refreshProgress();
+  if (state.date) sessionProtectedDates.add(state.date);
   syncState.dirty = true;
   syncState.lastLocalChange = Date.now();
   syncState.lastChangedDate = state.date;
@@ -2116,6 +2126,7 @@ function buildRowsForDay(date, day) {
   let bestVolume = -1;
   const bodyweightValue = Number(day.bodyweight);
   const bodyweight = Number.isFinite(bodyweightValue) && `${day.bodyweight}` !== '' ? bodyweightValue : '';
+  const updatedAt = Number(day.updatedAt) || 0;
 
   (day.exercises || []).forEach(exercise => {
     const exerciseName = (exercise.name || '').trim() || 'Oefening';
@@ -2165,7 +2176,8 @@ function buildRowsForDay(date, day) {
     totalSets,
     totalVolume,
     bestStr,
-    bodyweight
+    bodyweight,
+    updatedAt
   ]];
 
   return { rowsDays, rowsSets };
@@ -2339,6 +2351,11 @@ function parseMaybeNumber(value) {
   return Number.isFinite(num) ? num : value;
 }
 
+function parseTimestamp(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
 function normalizeDateValue(value) {
   if (!value) return '';
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -2423,7 +2440,8 @@ function buildAllFromSheets(daysRows, setsRows) {
     if (!date) return;
     const sessionName = row[1] || '';
     const bodyweight = parseMaybeNumber(row[6]);
-    all[date] = { sessionName, bodyweight, exercises: [] };
+    const updatedAt = parseTimestamp(row[7]);
+    all[date] = { sessionName, bodyweight, updatedAt, exercises: [] };
   });
 
   (setsRows || []).forEach(row => {
@@ -2444,7 +2462,7 @@ function buildAllFromSheets(daysRows, setsRows) {
     const done = doneRaw === true || doneRaw === 'yes' || doneRaw === 'true' || doneRaw === 1 || doneRaw === '1';
 
     if (!all[date]) {
-      all[date] = { sessionName, bodyweight: '', exercises: [] };
+      all[date] = { sessionName, bodyweight: '', updatedAt: 0, exercises: [] };
     } else if (!all[date].sessionName && sessionName) {
       all[date].sessionName = sessionName;
     }
@@ -2503,19 +2521,27 @@ function buildAllFromSheets(daysRows, setsRows) {
 }
 
 function shouldProtectLocalDay() {
+  const sessionProtected = !!(state.date && sessionProtectedDates.has(state.date));
   const focusedInsideExercises = !!(document.activeElement && exerciseList.contains(document.activeElement));
   const focusedInsideRoutines = !!(document.activeElement && routineList && routineList.contains(document.activeElement));
   const recentlyEdited = Date.now() - syncState.lastLocalChange < 30000;
-  return focusedInsideExercises || focusedInsideRoutines || recentlyEdited || syncState.dirty;
+  return sessionProtected || focusedInsideExercises || focusedInsideRoutines || recentlyEdited || syncState.dirty;
 }
 
-function mergeCurrentLocalDayIntoAll(all) {
-  if (!state.date || !shouldProtectLocalDay()) return all;
-
+function mergeCurrentLocalDayIntoAll(all, options = {}) {
+  if (!state.date) return all;
   const localDay = cloneState();
+  const remoteDay = all[state.date] || null;
+  const localUpdatedAt = Number(localDay.updatedAt) || 0;
+  const remoteUpdatedAt = Number(remoteDay?.updatedAt) || 0;
+  const shouldUseLocal = options.skipProtection !== true
+    && (shouldProtectLocalDay() || localUpdatedAt >= remoteUpdatedAt);
+  if (!shouldUseLocal) return all;
+
   all[state.date] = {
     sessionName: localDay.sessionName || '',
     bodyweight: localDay.bodyweight ?? '',
+    updatedAt: localUpdatedAt,
     exercises: localDay.exercises
   };
 
@@ -2531,6 +2557,7 @@ async function pullAllFromSheets(options = {}) {
   const silent = !!options.silent;
   const skipStatus = !!options.skipStatus;
   const confirmOverwrite = options.confirmOverwrite !== false;
+  const shouldBypassProtection = !silent && confirmOverwrite;
   if (!silent && confirmOverwrite) {
     const proceed = confirm('Dit overschrijft je lokale data met de data uit Google Sheets. Doorgaan?');
     if (!proceed) return;
@@ -2551,7 +2578,13 @@ async function pullAllFromSheets(options = {}) {
   if (hasRoutinesPayload) {
     saveRoutines(buildRoutinesFromSheets(result.data?.routines || []));
   }
-  const all = mergeCurrentLocalDayIntoAll(buildAllFromSheets(result.data?.days || [], result.data?.sets || []));
+  if (shouldBypassProtection && state.date) {
+    sessionProtectedDates.delete(state.date);
+  }
+  const all = mergeCurrentLocalDayIntoAll(
+    buildAllFromSheets(result.data?.days || [], result.data?.sets || []),
+    { skipProtection: shouldBypassProtection }
+  );
   saveAll(all);
   syncState.dirty = false;
   syncState.lastChangedScope = 'day';
@@ -2584,6 +2617,10 @@ async function maybeAutoPull(reason) {
     if (syncState.dirty) {
       return;
     }
+  }
+
+  if (state.date && sessionProtectedDates.has(state.date)) {
+    return;
   }
 
   await pullAllFromSheets({ silent: true, confirmOverwrite: false, skipStatus: true });
