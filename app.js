@@ -13,10 +13,12 @@ const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
 const routineSourceDaySelect = document.getElementById('routineSourceDay');
+const pageStoryBtn = document.getElementById('pageStoryBtn');
 const pageLogBtn = document.getElementById('pageLogBtn');
 const pageDashboardBtn = document.getElementById('pageDashboardBtn');
 const pageProgressBtn = document.getElementById('pageProgressBtn');
 const pageRoutinesBtn = document.getElementById('pageRoutinesBtn');
+const storyPage = document.getElementById('storyPage');
 const logPage = document.getElementById('logPage');
 const dashboardPage = document.getElementById('dashboardPage');
 const progressPage = document.getElementById('progressPage');
@@ -133,11 +135,13 @@ const AUTO_PULL_MIN_GAP_MS = 8000;
 const AUTO_PULL_DIRTY_GRACE_MS = 1500;
 
 function setActivePage(page, options = {}) {
-  const nextPage = page === 'dashboard' || page === 'routines' || page === 'progress' ? page : 'log';
+  const nextPage = page === 'log' || page === 'dashboard' || page === 'routines' || page === 'progress' || page === 'story' ? page : 'story';
+  if (storyPage) storyPage.classList.toggle('active', nextPage === 'story');
   if (logPage) logPage.classList.toggle('active', nextPage === 'log');
   if (dashboardPage) dashboardPage.classList.toggle('active', nextPage === 'dashboard');
   if (progressPage) progressPage.classList.toggle('active', nextPage === 'progress');
   if (routinesPage) routinesPage.classList.toggle('active', nextPage === 'routines');
+  if (pageStoryBtn) pageStoryBtn.classList.toggle('active', nextPage === 'story');
   if (pageLogBtn) pageLogBtn.classList.toggle('active', nextPage === 'log');
   if (pageDashboardBtn) pageDashboardBtn.classList.toggle('active', nextPage === 'dashboard');
   if (pageProgressBtn) pageProgressBtn.classList.toggle('active', nextPage === 'progress');
@@ -151,8 +155,7 @@ function setActivePage(page, options = {}) {
 }
 
 function getPreferredPage() {
-  const saved = localStorage.getItem(UI_PAGE_KEY);
-  return saved === 'dashboard' || saved === 'routines' || saved === 'progress' ? saved : 'log';
+  return 'story';
 }
 
 function todayISO() {
@@ -2284,7 +2287,7 @@ function renderProgressDraft(entry) {
   const imageData = entry?.imageData || progressDraftImage || '';
 
   if (progressWeekBadge) progressWeekBadge.textContent = formatWeekBadge(date);
-  if (progressEntryTitle) progressEntryTitle.textContent = entry?.id ? `Check-in ${formatShortDate(date)}` : 'Nieuwe progressie-entry';
+  if (progressEntryTitle) progressEntryTitle.textContent = entry?.id ? `Check-in ${formatShortDate(date)}` : 'Nieuwe check-in';
   if (progressEntryMeta) {
     progressEntryMeta.textContent = `${formatLongDate(date)}${bodyweight !== '' ? ` · ${formatNumber(Number(bodyweight) || bodyweight)} kg` : ' · nog geen gewicht ingevuld'}`;
   }
@@ -2447,7 +2450,7 @@ async function analyzeProgressEntry() {
         content: [
           {
             type: 'input_text',
-            text: `Je bent een eerlijke physique coach. Geef in het Nederlands een nuchtere, eerlijke beoordeling van zichtbare spiergroei of het gebrek daaraan. Let op licht, pose en pomp; noem onzekerheid als dat meespeelt. ${comparisonLine} Huidige datum: ${entry.date}. Huidig gewicht: ${entry.bodyweight || 'onbekend'} kg. Geef JSON met headline, verdict, summary en observations (max 4 korte bullets).`
+            text: `Je bent een eerlijke physique coach. Beoordeel in het Nederlands uitsluitend zichtbare spieropbouw, spiermassa, spierverhoudingen en lichaamsopbouw/lichaamssamenstelling. Negeer expliciet gezicht, huid, kleding, stijl, aantrekkelijkheid, achtergrond en alle andere niet-relevante factoren. Noem alleen kort onzekerheid als de foto door hoek, belichting of pose de beoordeling van spieropbouw belemmert. ${comparisonLine} Huidige datum: ${entry.date}. Huidig gewicht: ${entry.bodyweight || 'onbekend'} kg. Geef JSON met headline, verdict, summary en observations (max 4 korte bullets).`
           },
           ...(previous ? [
             { type: 'input_text', text: `Vorige foto (${previous.date}, ${previous.bodyweight || 'onbekend'} kg):` },
@@ -3266,6 +3269,13 @@ if (pageLogBtn) {
       updateRoutineApplyButton();
     }
     setActivePage('log');
+  });
+}
+
+if (pageStoryBtn) {
+  pageStoryBtn.addEventListener('click', () => {
+    renderProgressTimeline();
+    setActivePage('story');
   });
 }
 

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260328f" />
+  <link rel="stylesheet" href="styles.css?v=20260328h" />
 </head>
 <body>
   <div class="bg"></div>
@@ -18,15 +18,34 @@
         </div>
       </div>
       <nav class="page-nav" aria-label="Navigatie">
-        <button id="pageLogBtn" class="page-tab active" type="button">Logboek</button>
+        <button id="pageStoryBtn" class="page-tab active" type="button">Story</button>
+        <button id="pageLogBtn" class="page-tab" type="button">Logboek</button>
         <button id="pageDashboardBtn" class="page-tab" type="button">Dashboard</button>
-        <button id="pageProgressBtn" class="page-tab" type="button">Progressie</button>
+        <button id="pageProgressBtn" class="page-tab" type="button">Check-in</button>
         <button id="pageRoutinesBtn" class="page-tab" type="button">Vaste dagen</button>
       </nav>
     </header>
 
     <main class="pages">
-      <section id="logPage" class="page active">
+      <section id="storyPage" class="page active">
+        <div class="page-shell">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Progressie Story</h2>
+                <p>Scroll door je wekelijkse fysiek, gewicht en eerlijke AI-feedback over spieropbouw en lichaamsopbouw.</p>
+              </div>
+              <span class="badge">Week voor week</span>
+            </div>
+            <div id="progressTimeline" class="progress-timeline"></div>
+            <div id="progressEmpty" class="empty compact">
+              <p>Voeg je eerste weekfoto toe om je progressie-story op te bouwen.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="logPage" class="page">
         <div class="page-shell">
           <div class="controls">
             <label class="control">
@@ -207,8 +226,8 @@
           <section class="panel">
             <div class="panel-header">
               <div>
-                <h2>Weekly Check-In</h2>
-                <p>Upload je weekfoto, noteer je gewicht en laat AI er eerlijk naar kijken.</p>
+                <h2>Foto Check-In</h2>
+                <p>Upload je weekfoto, noteer je gewicht en laat AI alleen naar spieropbouw en lichaamsopbouw kijken.</p>
               </div>
               <button id="saveProgressEntryBtn" class="primary" type="button">Weekmoment opslaan</button>
             </div>
@@ -251,19 +270,6 @@
                 <h3 id="progressEntryTitle">Nieuwe progressie-entry</h3>
                 <p id="progressEntryMeta" class="hint">Kies een datum en foto om deze week vast te leggen.</p>
               </div>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-header">
-              <div>
-                <h2>Progressie Timeline</h2>
-                <p>Scroll door je wekelijkse fysiek, gewicht en AI-feedback.</p>
-              </div>
-            </div>
-            <div id="progressTimeline" class="progress-timeline"></div>
-            <div id="progressEmpty" class="empty compact">
-              <p>Voeg je eerste weekfoto toe om je progressie-timeline op te bouwen.</p>
             </div>
           </section>
         </div>
@@ -405,7 +411,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260328f"></script>
-  <script type="module" src="drive-sync.js?v=20260328f"></script>
+  <script src="app.js?v=20260328h"></script>
+  <script type="module" src="drive-sync.js?v=20260328h"></script>
 </body>
 </html>
