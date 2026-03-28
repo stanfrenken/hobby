@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260328d" />
+  <link rel="stylesheet" href="styles.css?v=20260328e" />
 </head>
 <body>
   <div class="bg"></div>
@@ -103,6 +103,17 @@
 
       <section id="dashboardPage" class="page">
         <div class="dashboard-grid">
+          <section class="panel dashboard-toolbar">
+            <div class="toolbar-row">
+              <label class="control compact-control">
+                <span>Week kiezen</span>
+                <input id="dashboardWeek" type="week" />
+              </label>
+              <button id="dashboardWeekNow" class="ghost" type="button">Deze week</button>
+            </div>
+            <p id="dashboardWeekLabel" class="hint">Kies welke week je in de stacked charts wilt zien.</p>
+          </section>
+
           <section class="panel">
             <div class="panel-header">
               <h2>Weekvolume (primair)</h2>
@@ -198,9 +209,13 @@
                 <h2>Vaste Oefeningen Per Dag</h2>
                 <p>Kies een weekdag en stel je vaste oefeningen in.</p>
               </div>
-              <button id="addRoutineExerciseBtn" class="primary" type="button">+ Vaste oefening</button>
+              <div class="mini-actions">
+                <button id="saveRoutineDayBtn" class="ghost" type="button">Vaste dag opslaan</button>
+                <button id="addRoutineExerciseBtn" class="primary" type="button">+ Vaste oefening</button>
+              </div>
             </div>
             <div id="routineDayTabs" class="day-tabs"></div>
+            <p id="routineSaveHint" class="hint">Wijzigingen blijven lokaal staan en kunnen met deze knop meteen bevestigd worden.</p>
             <div id="routineList" class="routine-list"></div>
             <div id="routineEmpty" class="empty compact">
               <p>Voor deze dag heb je nog geen vaste oefeningen ingesteld.</p>
@@ -230,17 +245,17 @@
         </div>
       </div>
       <div class="exercise-meta">
-        <div class="exercise-left">
-          <div class="muscle-grid">
-            <label class="control">
-              <span>Primary muscle</span>
-              <select class="exercise-primary"></select>
-            </label>
-            <label class="control">
-              <span>Secondary muscle</span>
-              <select class="exercise-secondary"></select>
-            </label>
-          </div>
+          <div class="exercise-left">
+            <div class="muscle-grid">
+              <label class="control">
+                <span>Primary muscle</span>
+                <select class="exercise-primary"></select>
+              </label>
+              <div class="control secondary-control">
+                <span>Secondary muscles</span>
+                <div class="secondary-picker exercise-secondary-picker"></div>
+              </div>
+            </div>
           <textarea class="exercise-notes" placeholder="Notities, tempo, cues..."></textarea>
         </div>
         <div class="exercise-stats">
@@ -313,16 +328,16 @@
           <span>Primary muscle</span>
           <select class="routine-primary"></select>
         </label>
-        <label class="control">
-          <span>Secondary muscle</span>
-          <select class="routine-secondary"></select>
-        </label>
+        <div class="control secondary-control">
+          <span>Secondary muscles</span>
+          <div class="secondary-picker routine-secondary-picker"></div>
+        </div>
       </div>
     </article>
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260328d"></script>
-  <script type="module" src="drive-sync.js?v=20260328d"></script>
+  <script src="app.js?v=20260328e"></script>
+  <script type="module" src="drive-sync.js?v=20260328e"></script>
 </body>
 </html>

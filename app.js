@@ -5,6 +5,7 @@ const EXERCISE_LIBRARY_KEY = 'fitnessLog.exerciseLibrary.v1';
 const ROUTINES_KEY = 'fitnessLog.routines.v1';
 const UI_PAGE_KEY = 'fitnessLog.uiPage.v1';
 const ROUTINE_UI_KEY = 'fitnessLog.routineDay.v1';
+const DASHBOARD_WEEK_KEY = 'fitnessLog.dashboardWeek.v1';
 
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
@@ -33,6 +34,9 @@ const weekPrimaryReadout = document.getElementById('weekPrimaryReadout');
 const weekSecondaryReadout = document.getElementById('weekSecondaryReadout');
 const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
 const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
+const dashboardWeekInput = document.getElementById('dashboardWeek');
+const dashboardWeekNowBtn = document.getElementById('dashboardWeekNow');
+const dashboardWeekLabel = document.getElementById('dashboardWeekLabel');
 const focusName = document.getElementById('focusName');
 const focusExerciseSelect = document.getElementById('focusExerciseSelect');
 const focusChart = document.getElementById('focusChart');
@@ -46,6 +50,8 @@ const routineDayTabs = document.getElementById('routineDayTabs');
 const routineList = document.getElementById('routineList');
 const routineEmpty = document.getElementById('routineEmpty');
 const addRoutineExerciseBtn = document.getElementById('addRoutineExerciseBtn');
+const saveRoutineDayBtn = document.getElementById('saveRoutineDayBtn');
+const routineSaveHint = document.getElementById('routineSaveHint');
 const exportBtn = document.getElementById('exportData');
 const importInput = document.getElementById('importData');
 const syncUrlInput = document.getElementById('syncUrl');
@@ -166,10 +172,10 @@ function loadCustomExerciseLibrary() {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .map(item => ({
-        name: String(item?.name || '').trim(),
-        primary: sanitizeMuscleGroup(item?.primary) || '',
-        secondary: sanitizeMuscleGroup(item?.secondary) || ''
+      .map(item => normalizeExerciseProfile({
+        name: item?.name,
+        primary: item?.primary,
+        secondaryGroups: item?.secondaryGroups ?? item?.secondary
       }))
       .filter(item => item.name);
   } catch {
@@ -178,7 +184,10 @@ function loadCustomExerciseLibrary() {
 }
 
 function saveCustomExerciseLibrary(items) {
-  localStorage.setItem(EXERCISE_LIBRARY_KEY, JSON.stringify(items));
+  const normalized = (items || [])
+    .map(item => normalizeExerciseProfile(item))
+    .filter(item => item.name);
+  localStorage.setItem(EXERCISE_LIBRARY_KEY, JSON.stringify(normalized));
 }
 
 function createEmptyRoutines() {
@@ -198,7 +207,10 @@ function normalizeRoutineState(data) {
       id: item?.id || uid(),
       name: String(item?.name || '').trim(),
       primaryGroup: sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || '',
-      secondaryGroup: sanitizeMuscleGroup(item?.secondaryGroup) || sanitizeMuscleGroup(item?.secondary) || ''
+      secondaryGroups: normalizeSecondaryGroups(
+        item?.secondaryGroups ?? item?.secondaryGroup ?? item?.secondary,
+        sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || ''
+      )
     }));
   });
 
@@ -298,8 +310,8 @@ function normalizeAllData(data) {
       id: ex?.id || uid(),
       name: ex?.name || '',
       notes: ex?.notes || '',
-      primaryGroup: ex?.primaryGroup || '',
-      secondaryGroup: ex?.secondaryGroup || '',
+      primaryGroup: sanitizeMuscleGroup(ex?.primaryGroup) || '',
+      secondaryGroups: normalizeSecondaryGroups(ex?.secondaryGroups ?? ex?.secondaryGroup, sanitizeMuscleGroup(ex?.primaryGroup) || ''),
       sets: Array.isArray(ex?.sets)
         ? ex.sets.map(set => ({
           id: set?.id || uid(),
@@ -354,8 +366,8 @@ function loadDay(date) {
     id: ex.id || uid(),
     name: ex.name || '',
     notes: ex.notes || '',
-    primaryGroup: ex.primaryGroup || '',
-    secondaryGroup: ex.secondaryGroup || '',
+    primaryGroup: sanitizeMuscleGroup(ex.primaryGroup) || '',
+    secondaryGroups: normalizeSecondaryGroups(ex.secondaryGroups ?? ex.secondaryGroup, sanitizeMuscleGroup(ex.primaryGroup) || ''),
     sets: (ex.sets || []).map(set => ({
       id: set.id || uid(),
       reps: set.reps ?? '',
@@ -391,7 +403,7 @@ function addExercise() {
     name: '',
     notes: '',
     primaryGroup: '',
-    secondaryGroup: '',
+    secondaryGroups: [],
     sets: [newSet()]
   };
   state.exercises.push(exercise);
@@ -421,6 +433,46 @@ function populateMuscleSelect(select, options) {
   });
 }
 
+function renderSecondaryPicker(container, selectedValues, primaryValue, inputClassName) {
+  if (!container) return;
+  const selected = new Set(normalizeSecondaryGroups(selectedValues, primaryValue));
+  container.innerHTML = '';
+
+  PRIMARY_GROUPS.forEach(group => {
+    const chip = document.createElement('label');
+    const isDisabled = group === primaryValue;
+    chip.className = `secondary-chip${isDisabled ? ' disabled' : ''}`;
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = inputClassName;
+    input.value = group;
+    input.checked = selected.has(group);
+    input.disabled = isDisabled;
+
+    const text = document.createElement('span');
+    text.textContent = group;
+
+    chip.appendChild(input);
+    chip.appendChild(text);
+    container.appendChild(chip);
+  });
+
+  if (!PRIMARY_GROUPS.length) {
+    const empty = document.createElement('span');
+    empty.className = 'secondary-empty';
+    empty.textContent = 'Geen secondary muscles beschikbaar.';
+    container.appendChild(empty);
+  }
+}
+
+function readSecondaryPickerValues(card, inputClassName, primaryValue) {
+  return normalizeSecondaryGroups(
+    Array.from(card.querySelectorAll(`.${inputClassName}:checked`)).map(input => input.value),
+    primaryValue
+  );
+}
+
 function normalizeExerciseName(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -438,32 +490,27 @@ function getAutoExerciseProfile(name, catalog) {
   const match = (catalog || []).find(item => normalizeExerciseName(item.name) === key);
   if (match) return match;
 
-  const fallback = classifyExercise(cleanName);
-  return {
-    name: cleanName,
-    primary: fallback.primary || 'Overig',
-    secondary: fallback.secondary?.[0] || ''
-  };
+  return classifyExercise(cleanName);
 }
 
 function applyExerciseProfile(exercise, card, profile, catalog) {
   const nameInput = card?.querySelector('.exercise-name');
   const selectInput = card?.querySelector('.exercise-select');
   const primarySelect = card?.querySelector('.exercise-primary');
-  const secondarySelect = card?.querySelector('.exercise-secondary');
+  const secondaryPicker = card?.querySelector('.exercise-secondary-picker');
 
   if (!profile) {
     exercise.primaryGroup = '';
-    exercise.secondaryGroup = '';
+    exercise.secondaryGroups = [];
     if (selectInput) selectInput.value = '';
     if (primarySelect) primarySelect.value = 'Automatisch';
-    if (secondarySelect) secondarySelect.value = 'Geen';
+    renderSecondaryPicker(secondaryPicker, [], '', 'exercise-secondary');
     return;
   }
 
   exercise.name = profile.name;
   exercise.primaryGroup = profile.primary || '';
-  exercise.secondaryGroup = profile.secondary && profile.secondary !== exercise.primaryGroup ? profile.secondary : '';
+  exercise.secondaryGroups = normalizeSecondaryGroups(profile.secondaryGroups ?? profile.secondary, exercise.primaryGroup);
 
   if (nameInput) nameInput.value = exercise.name;
   if (selectInput) {
@@ -471,7 +518,7 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
     selectInput.value = exact ? exact.name : '';
   }
   if (primarySelect) primarySelect.value = exercise.primaryGroup || 'Automatisch';
-  if (secondarySelect) secondarySelect.value = exercise.secondaryGroup || 'Geen';
+  renderSecondaryPicker(secondaryPicker, exercise.secondaryGroups, exercise.primaryGroup, 'exercise-secondary');
 }
 
 function populateExerciseSelect(select, catalog, currentName) {
@@ -499,8 +546,8 @@ function populateExerciseSelect(select, catalog, currentName) {
 function buildExerciseProfileFromExercise(exercise) {
   const name = (exercise?.name || '').trim();
   if (!name) return null;
-  const { primary, secondary } = resolveExerciseMuscles(exercise);
-  return { name, primary, secondary };
+  const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
+  return normalizeExerciseProfile({ name, primary, secondaryGroups });
 }
 
 function saveExerciseProfileToLibrary(exercise) {
@@ -576,15 +623,19 @@ function renderExercises() {
     const selectInput = card.querySelector('.exercise-select');
     const notesInput = card.querySelector('.exercise-notes');
     const primarySelect = card.querySelector('.exercise-primary');
-    const secondarySelect = card.querySelector('.exercise-secondary');
+    const secondaryPicker = card.querySelector('.exercise-secondary-picker');
     nameInput.value = exercise.name;
     populateExerciseSelect(selectInput, catalog, exercise.name);
     notesInput.value = exercise.notes;
     populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
-    populateMuscleSelect(secondarySelect, SECONDARY_SELECT_OPTIONS);
     const displayProfile = getAutoExerciseProfile(exercise.name, catalog);
     primarySelect.value = exercise.primaryGroup || displayProfile?.primary || 'Automatisch';
-    secondarySelect.value = exercise.secondaryGroup || displayProfile?.secondary || 'Geen';
+    renderSecondaryPicker(
+      secondaryPicker,
+      exercise.secondaryGroups?.length ? exercise.secondaryGroups : (displayProfile?.secondaryGroups || []),
+      exercise.primaryGroup || displayProfile?.primary || '',
+      'exercise-secondary'
+    );
 
     const setsBody = card.querySelector('.sets-body');
     exercise.sets.forEach((set, index) => {
@@ -609,16 +660,20 @@ function applyRoutineProfile(item, card, profile, catalog) {
   const nameInput = card?.querySelector('.routine-name');
   const selectInput = card?.querySelector('.routine-select');
   const primarySelect = card?.querySelector('.routine-primary');
-  const secondarySelect = card?.querySelector('.routine-secondary');
+  const secondaryPicker = card?.querySelector('.routine-secondary-picker');
 
   if (!profile) {
+    item.primaryGroup = '';
+    item.secondaryGroups = [];
     if (selectInput) selectInput.value = '';
+    if (primarySelect) primarySelect.value = 'Automatisch';
+    renderSecondaryPicker(secondaryPicker, [], '', 'routine-secondary');
     return;
   }
 
   item.name = profile.name;
   item.primaryGroup = profile.primary || '';
-  item.secondaryGroup = profile.secondary && profile.secondary !== item.primaryGroup ? profile.secondary : '';
+  item.secondaryGroups = normalizeSecondaryGroups(profile.secondaryGroups ?? profile.secondary, item.primaryGroup);
 
   if (nameInput) nameInput.value = item.name;
   if (selectInput) {
@@ -626,7 +681,7 @@ function applyRoutineProfile(item, card, profile, catalog) {
     selectInput.value = exact ? exact.name : '';
   }
   if (primarySelect) primarySelect.value = item.primaryGroup || 'Automatisch';
-  if (secondarySelect) secondarySelect.value = item.secondaryGroup || 'Geen';
+  renderSecondaryPicker(secondaryPicker, item.secondaryGroups, item.primaryGroup, 'routine-secondary');
 }
 
 function getStoredRoutineDay() {
@@ -647,6 +702,15 @@ function persistRoutines(routines, options = {}) {
   emitCloudChange('meta');
 }
 
+function saveRoutineDay() {
+  const routines = loadRoutines();
+  persistRoutines(routines, { refreshLogbook: true, rerenderRoutine: false });
+  if (routineSaveHint) {
+    routineSaveHint.textContent = `${getRoutineDayLabel(selectedRoutineDay)} is opgeslagen.`;
+  }
+  flashButtonLabel(saveRoutineDayBtn, 'Opgeslagen', 1100);
+}
+
 function setSelectedRoutineDay(dayKey, options = {}) {
   selectedRoutineDay = ROUTINE_DAYS.some(day => day.key === dayKey) ? dayKey : 'monday';
   if (!options.skipPersist) {
@@ -660,6 +724,9 @@ function renderRoutinePage() {
 
   const routines = loadRoutines();
   const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+  if (routineSaveHint) {
+    routineSaveHint.textContent = `Klik op opslaan om ${getRoutineDayLabel(selectedRoutineDay).toLowerCase()} te bevestigen.`;
+  }
 
   routineDayTabs.innerHTML = '';
   ROUTINE_DAYS.forEach(day => {
@@ -682,15 +749,19 @@ function renderRoutinePage() {
     const selectInput = card.querySelector('.routine-select');
     const nameInput = card.querySelector('.routine-name');
     const primarySelect = card.querySelector('.routine-primary');
-    const secondarySelect = card.querySelector('.routine-secondary');
+    const secondaryPicker = card.querySelector('.routine-secondary-picker');
 
     populateExerciseSelect(selectInput, catalog, item.name);
     nameInput.value = item.name;
     populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
-    populateMuscleSelect(secondarySelect, SECONDARY_SELECT_OPTIONS);
     const profile = getAutoExerciseProfile(item.name, catalog);
     primarySelect.value = item.primaryGroup || profile?.primary || 'Automatisch';
-    secondarySelect.value = item.secondaryGroup || profile?.secondary || 'Geen';
+    renderSecondaryPicker(
+      secondaryPicker,
+      item.secondaryGroups?.length ? item.secondaryGroups : (profile?.secondaryGroups || []),
+      item.primaryGroup || profile?.primary || '',
+      'routine-secondary'
+    );
 
     routineList.appendChild(card);
   });
@@ -702,7 +773,7 @@ function addRoutineExercise() {
     id: uid(),
     name: '',
     primaryGroup: '',
-    secondaryGroup: ''
+    secondaryGroups: []
   });
   persistRoutines(routines);
   requestAnimationFrame(() => {
@@ -744,17 +815,12 @@ function handleRoutineInputChange(target) {
 
   if (target.classList.contains('routine-primary')) {
     item.primaryGroup = target.value === 'Automatisch' ? '' : target.value;
-    if (item.secondaryGroup && item.secondaryGroup === item.primaryGroup) {
-      item.secondaryGroup = '';
-      const secondaryEl = card.querySelector('.routine-secondary');
-      if (secondaryEl) secondaryEl.value = 'Geen';
-    }
+    item.secondaryGroups = normalizeSecondaryGroups(item.secondaryGroups, item.primaryGroup);
+    renderSecondaryPicker(card.querySelector('.routine-secondary-picker'), item.secondaryGroups, item.primaryGroup, 'routine-secondary');
   }
 
   if (target.classList.contains('routine-secondary')) {
-    const next = target.value === 'Geen' ? '' : target.value;
-    item.secondaryGroup = next === item.primaryGroup ? '' : next;
-    if (item.secondaryGroup === '') target.value = 'Geen';
+    item.secondaryGroups = readSecondaryPickerValues(card, 'routine-secondary', item.primaryGroup);
   }
 
   persistRoutines(routines, { rerenderRoutine: false });
@@ -784,7 +850,7 @@ function addRoutineExercisesToCurrentDay() {
       name: item.name,
       notes: '',
       primaryGroup: item.primaryGroup || '',
-      secondaryGroup: item.secondaryGroup || '',
+      secondaryGroups: [...(item.secondaryGroups || [])],
       sets: [newSet()]
     });
   });
@@ -1038,16 +1104,11 @@ function handleInputChange(target) {
   }
   if (target.classList.contains('exercise-primary')) {
     exercise.primaryGroup = target.value === 'Automatisch' ? '' : target.value;
-    if (exercise.secondaryGroup && exercise.secondaryGroup === exercise.primaryGroup) {
-      exercise.secondaryGroup = '';
-      const secondaryEl = card.querySelector('.exercise-secondary');
-      if (secondaryEl) secondaryEl.value = 'Geen';
-    }
+    exercise.secondaryGroups = normalizeSecondaryGroups(exercise.secondaryGroups, exercise.primaryGroup);
+    renderSecondaryPicker(card.querySelector('.exercise-secondary-picker'), exercise.secondaryGroups, exercise.primaryGroup, 'exercise-secondary');
   }
   if (target.classList.contains('exercise-secondary')) {
-    const next = target.value === 'Geen' ? '' : target.value;
-    exercise.secondaryGroup = next === exercise.primaryGroup ? '' : next;
-    if (exercise.secondaryGroup === '') target.value = 'Geen';
+    exercise.secondaryGroups = readSecondaryPickerValues(card, 'exercise-secondary', exercise.primaryGroup);
   }
 
   const setRow = target.closest('.set-row');
@@ -1256,6 +1317,9 @@ const PRIMARY_GROUPS = [
   'Biceps',
   'Triceps',
   'Borst',
+  'Anterior delts',
+  'Lateral delts',
+  'Rear delts',
   'Schouders',
   'Kuiten',
   'Hamstrings',
@@ -1267,50 +1331,54 @@ const PRIMARY_GROUPS = [
 ];
 
 const EXERCISE_LIBRARY = [
-  { name: 'Bench Press', primary: 'Borst', secondary: 'Triceps' },
-  { name: 'Incline Bench Press', primary: 'Borst', secondary: 'Triceps' },
-  { name: 'Chest Press', primary: 'Borst', secondary: 'Triceps' },
-  { name: 'Incline Fly', primary: 'Borst', secondary: 'Schouders' },
-  { name: 'Cable Fly', primary: 'Borst', secondary: 'Schouders' },
-  { name: 'Push-Up', primary: 'Borst', secondary: 'Triceps' },
-  { name: 'Shoulder Press', primary: 'Schouders', secondary: 'Triceps' },
-  { name: 'Lateral Raise', primary: 'Schouders', secondary: 'Traps' },
-  { name: 'Rear Delt Fly', primary: 'Schouders', secondary: 'Upper back' },
-  { name: 'Face Pull', primary: 'Upper back', secondary: 'Schouders' },
-  { name: 'Barbell Curl', primary: 'Biceps', secondary: '' },
-  { name: 'Dumbbell Curl', primary: 'Biceps', secondary: '' },
-  { name: 'Hammer Curl', primary: 'Biceps', secondary: '' },
-  { name: 'Tricep Pushdown', primary: 'Triceps', secondary: '' },
-  { name: 'Skull Crusher', primary: 'Triceps', secondary: '' },
-  { name: 'Overhead Tricep Extension', primary: 'Triceps', secondary: '' },
-  { name: 'Squat', primary: 'Quads', secondary: 'Hamstrings' },
-  { name: 'Hack Squat', primary: 'Quads', secondary: 'Hamstrings' },
-  { name: 'Leg Press', primary: 'Quads', secondary: 'Hamstrings' },
-  { name: 'Walking Lunge', primary: 'Quads', secondary: 'Hamstrings' },
-  { name: 'Leg Extension', primary: 'Quads', secondary: '' },
-  { name: 'Romanian Deadlift', primary: 'Hamstrings', secondary: 'Upper back' },
-  { name: 'Deadlift', primary: 'Hamstrings', secondary: 'Upper back' },
-  { name: 'Leg Curl', primary: 'Hamstrings', secondary: '' },
-  { name: 'Calf Raise', primary: 'Kuiten', secondary: '' },
-  { name: 'Lat Pulldown', primary: 'Upper back', secondary: 'Biceps' },
-  { name: 'Pull-Up', primary: 'Upper back', secondary: 'Biceps' },
-  { name: 'Seated Cable Row', primary: 'Upper back', secondary: 'Biceps' },
-  { name: 'Barbell Row', primary: 'Upper back', secondary: 'Biceps' },
-  { name: 'Shrug', primary: 'Traps', secondary: '' },
-  { name: 'Crunch', primary: 'Abs', secondary: '' },
-  { name: 'Cable Crunch', primary: 'Abs', secondary: '' },
-  { name: 'Hanging Leg Raise', primary: 'Abs', secondary: '' },
-  { name: 'Plank', primary: 'Abs', secondary: '' }
+  { name: 'Bench Press', primary: 'Borst', secondaryGroups: ['Triceps', 'Anterior delts'] },
+  { name: 'Incline Bench Press', primary: 'Borst', secondaryGroups: ['Triceps', 'Anterior delts'] },
+  { name: 'Chest Press', primary: 'Borst', secondaryGroups: ['Triceps', 'Anterior delts'] },
+  { name: 'Incline Fly', primary: 'Borst', secondaryGroups: ['Anterior delts'] },
+  { name: 'Cable Fly', primary: 'Borst', secondaryGroups: ['Anterior delts'] },
+  { name: 'Push-Up', primary: 'Borst', secondaryGroups: ['Triceps', 'Anterior delts'] },
+  { name: 'Shoulder Press', primary: 'Anterior delts', secondaryGroups: ['Triceps'] },
+  { name: 'Military Press', primary: 'Anterior delts', secondaryGroups: ['Triceps'] },
+  { name: 'Arnold Press', primary: 'Anterior delts', secondaryGroups: ['Triceps'] },
+  { name: 'Lateral Raise', primary: 'Lateral delts', secondaryGroups: ['Traps'] },
+  { name: 'Rear Delt Fly', primary: 'Rear delts', secondaryGroups: ['Upper back', 'Traps'] },
+  { name: 'Face Pull', primary: 'Rear delts', secondaryGroups: ['Upper back', 'Traps'] },
+  { name: 'Barbell Curl', primary: 'Biceps', secondaryGroups: [] },
+  { name: 'Dumbbell Curl', primary: 'Biceps', secondaryGroups: [] },
+  { name: 'Hammer Curl', primary: 'Biceps', secondaryGroups: ['Upper back'] },
+  { name: 'Tricep Pushdown', primary: 'Triceps', secondaryGroups: [] },
+  { name: 'Skull Crusher', primary: 'Triceps', secondaryGroups: [] },
+  { name: 'Overhead Tricep Extension', primary: 'Triceps', secondaryGroups: [] },
+  { name: 'Squat', primary: 'Quads', secondaryGroups: ['Hamstrings'] },
+  { name: 'Hack Squat', primary: 'Quads', secondaryGroups: ['Hamstrings'] },
+  { name: 'Leg Press', primary: 'Quads', secondaryGroups: ['Hamstrings'] },
+  { name: 'Walking Lunge', primary: 'Quads', secondaryGroups: ['Hamstrings'] },
+  { name: 'Leg Extension', primary: 'Quads', secondaryGroups: [] },
+  { name: 'Romanian Deadlift', primary: 'Hamstrings', secondaryGroups: ['Upper back', 'Traps'] },
+  { name: 'Deadlift', primary: 'Hamstrings', secondaryGroups: ['Upper back', 'Traps'] },
+  { name: 'Leg Curl', primary: 'Hamstrings', secondaryGroups: [] },
+  { name: 'Calf Raise', primary: 'Kuiten', secondaryGroups: [] },
+  { name: 'Lat Pulldown', primary: 'Upper back', secondaryGroups: ['Biceps', 'Rear delts'] },
+  { name: 'Pull-Up', primary: 'Upper back', secondaryGroups: ['Biceps', 'Rear delts'] },
+  { name: 'Seated Cable Row', primary: 'Upper back', secondaryGroups: ['Biceps', 'Rear delts'] },
+  { name: 'Barbell Row', primary: 'Upper back', secondaryGroups: ['Biceps', 'Rear delts'] },
+  { name: 'Shrug', primary: 'Traps', secondaryGroups: [] },
+  { name: 'Crunch', primary: 'Abs', secondaryGroups: [] },
+  { name: 'Cable Crunch', primary: 'Abs', secondaryGroups: [] },
+  { name: 'Hanging Leg Raise', primary: 'Abs', secondaryGroups: [] },
+  { name: 'Plank', primary: 'Abs', secondaryGroups: [] }
 ];
 
 const MUSCLE_SELECT_OPTIONS = ['Automatisch', ...PRIMARY_GROUPS];
-const SECONDARY_SELECT_OPTIONS = ['Geen', ...PRIMARY_GROUPS];
 
 const CATEGORY_COLORS = {
   Biceps: '#6c5ce7',
   Triceps: '#00b894',
   Borst: '#d63031',
-  Schouders: '#e17055',
+  'Anterior delts': '#f08c6c',
+  'Lateral delts': '#e17055',
+  'Rear delts': '#b85c38',
+  Schouders: '#d9822b',
   Kuiten: '#0984e3',
   Hamstrings: '#2d3436',
   Quads: '#e84393',
@@ -1320,73 +1388,132 @@ const CATEGORY_COLORS = {
   Overig: '#b2bec3'
 };
 
+function sanitizeMuscleGroup(value) {
+  const raw = String(value || '').trim();
+  return PRIMARY_GROUPS.includes(raw) ? raw : '';
+}
+
+function normalizeSecondaryGroups(value, primary = '') {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : value
+        ? [value]
+        : [];
+  const normalized = [];
+  const used = new Set();
+
+  source.forEach(item => {
+    const group = sanitizeMuscleGroup(item);
+    if (!group || group === primary || used.has(group)) return;
+    used.add(group);
+    normalized.push(group);
+  });
+
+  return normalized;
+}
+
+function normalizeExerciseProfile(profile) {
+  const name = String(profile?.name || '').trim();
+  const primary = sanitizeMuscleGroup(profile?.primary) || 'Overig';
+  const secondaryGroups = normalizeSecondaryGroups(
+    profile?.secondaryGroups ?? profile?.secondary,
+    primary
+  );
+  return {
+    name,
+    primary,
+    secondaryGroups,
+    secondary: secondaryGroups[0] || ''
+  };
+}
+
 function classifyExercise(name) {
   const n = (name || '').toLowerCase();
 
-  if (/(shoulder|overhead|military|arnold|lateral|rear delt|delt)/.test(n)) {
-    return { primary: 'Schouders', secondary: /press/.test(n) ? ['Triceps'] : [] };
+  if (/(rear delt|rear raise|reverse fly|face pull)/.test(n)) {
+    return normalizeExerciseProfile({ name, primary: 'Rear delts', secondaryGroups: ['Upper back', 'Traps'] });
   }
-  if (/(bench|chest|incline|decline|fly|pec)/.test(n)) {
-    return { primary: 'Borst', secondary: /press|bench/.test(n) ? ['Triceps'] : [] };
+  if (/(lateral raise|side raise)/.test(n)) {
+    return normalizeExerciseProfile({ name, primary: 'Lateral delts', secondaryGroups: ['Traps'] });
+  }
+  if (/(shoulder press|overhead|military|arnold|front raise)/.test(n)) {
+    return normalizeExerciseProfile({ name, primary: 'Anterior delts', secondaryGroups: ['Triceps'] });
+  }
+  if (/(shoulder|delt)/.test(n)) {
+    return normalizeExerciseProfile({ name, primary: 'Schouders', secondaryGroups: ['Triceps'] });
+  }
+  if (/(bench|chest|incline|decline|pec)/.test(n)) {
+    const secondaryGroups = /fly/.test(n) ? ['Anterior delts'] : ['Triceps', 'Anterior delts'];
+    return normalizeExerciseProfile({ name, primary: 'Borst', secondaryGroups });
+  }
+  if (/(fly)/.test(n)) {
+    return normalizeExerciseProfile({ name, primary: 'Borst', secondaryGroups: ['Anterior delts'] });
   }
   if (/(bicep|curl)/.test(n)) {
-    return { primary: 'Biceps', secondary: [] };
+    return normalizeExerciseProfile({ name, primary: 'Biceps', secondaryGroups: [] });
   }
   if (/(tricep|pushdown|skull|extension)/.test(n)) {
-    return { primary: 'Triceps', secondary: [] };
+    return normalizeExerciseProfile({ name, primary: 'Triceps', secondaryGroups: [] });
   }
   if (/(squat|leg press|lunge|leg extension|hack squat)/.test(n)) {
-    return { primary: 'Quads', secondary: ['Hamstrings'] };
+    return normalizeExerciseProfile({ name, primary: 'Quads', secondaryGroups: ['Hamstrings'] });
   }
   if (/(hamstring|leg curl|rdl|romanian|deadlift|good morning)/.test(n)) {
-    return { primary: 'Hamstrings', secondary: ['Upper back'] };
+    return normalizeExerciseProfile({ name, primary: 'Hamstrings', secondaryGroups: ['Upper back', 'Traps'] });
   }
   if (/(calf)/.test(n)) {
-    return { primary: 'Kuiten', secondary: [] };
+    return normalizeExerciseProfile({ name, primary: 'Kuiten', secondaryGroups: [] });
   }
   if (/(row|pull|pulldown|lat|chin|pullup|pull-up)/.test(n)) {
-    return { primary: 'Upper back', secondary: ['Biceps'] };
+    return normalizeExerciseProfile({ name, primary: 'Upper back', secondaryGroups: ['Biceps', 'Rear delts'] });
   }
   if (/(shrug|trap)/.test(n)) {
-    return { primary: 'Traps', secondary: [] };
+    return normalizeExerciseProfile({ name, primary: 'Traps', secondaryGroups: [] });
   }
   if (/(abs|core|crunch|plank|sit-up|leg raise)/.test(n)) {
-    return { primary: 'Abs', secondary: [] };
+    return normalizeExerciseProfile({ name, primary: 'Abs', secondaryGroups: [] });
   }
 
-  return { primary: 'Overig', secondary: [] };
-}
-
-function sanitizeMuscleGroup(value) {
-  return PRIMARY_GROUPS.includes(value) ? value : '';
+  return normalizeExerciseProfile({ name, primary: 'Overig', secondaryGroups: [] });
 }
 
 function resolveExerciseMuscles(exercise) {
   const fallback = classifyExercise(exercise?.name || '');
   const primary = sanitizeMuscleGroup(exercise?.primaryGroup) || fallback.primary;
-  const secondaryRaw = sanitizeMuscleGroup(exercise?.secondaryGroup) || fallback.secondary[0] || '';
-  const secondary = secondaryRaw && secondaryRaw !== primary ? secondaryRaw : '';
-  return { primary, secondary };
+  const secondaryGroups = normalizeSecondaryGroups(
+    exercise?.secondaryGroups ?? exercise?.secondaryGroup ?? fallback.secondaryGroups,
+    primary
+  );
+  return {
+    primary,
+    secondaryGroups,
+    secondary: secondaryGroups[0] || ''
+  };
 }
 
 function getExerciseCatalog(all) {
   const byName = new Map();
 
   EXERCISE_LIBRARY.forEach(item => {
-    byName.set(normalizeExerciseName(item.name), { ...item });
+    const profile = normalizeExerciseProfile(item);
+    byName.set(normalizeExerciseName(profile.name), profile);
   });
 
   loadCustomExerciseLibrary().forEach(item => {
-    byName.set(normalizeExerciseName(item.name), { ...item });
+    const profile = normalizeExerciseProfile(item);
+    byName.set(normalizeExerciseName(profile.name), profile);
   });
 
   Object.values(loadRoutines()).flat().forEach(item => {
     if (!item?.name) return;
-    byName.set(normalizeExerciseName(item.name), {
+    const profile = normalizeExerciseProfile({
       name: item.name,
       primary: item.primaryGroup || '',
-      secondary: item.secondaryGroup || ''
+      secondaryGroups: item.secondaryGroups ?? item.secondaryGroup
     });
+    byName.set(normalizeExerciseName(profile.name), profile);
   });
 
   Object.entries(all || {})
@@ -1395,8 +1522,9 @@ function getExerciseCatalog(all) {
       (day?.exercises || []).forEach(exercise => {
         const name = (exercise?.name || '').trim();
         if (!name) return;
-        const { primary, secondary } = resolveExerciseMuscles(exercise);
-        byName.set(normalizeExerciseName(name), { name, primary, secondary });
+        const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
+        const profile = normalizeExerciseProfile({ name, primary, secondaryGroups });
+        byName.set(normalizeExerciseName(name), profile);
       });
     });
 
@@ -1405,15 +1533,78 @@ function getExerciseCatalog(all) {
     .sort((a, b) => a.name.localeCompare(b.name, 'nl-NL'));
 }
 
-function getWeekDates(baseDate) {
-  const base = parseDate(baseDate) || new Date();
-  const dates = [];
-  for (let i = 6; i >= 0; i -= 1) {
-    const d = new Date(base);
-    d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
-  }
-  return dates;
+function toIsoDateString(date) {
+  const safe = new Date(date);
+  safe.setHours(0, 0, 0, 0);
+  const local = new Date(safe.getTime() - safe.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function getWeekStartDate(value) {
+  const base = parseDate(value) || new Date();
+  const date = new Date(base);
+  date.setHours(0, 0, 0, 0);
+  const offset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - offset);
+  return date;
+}
+
+function formatWeekInputValue(value) {
+  const weekStart = getWeekStartDate(value);
+  const anchor = new Date(Date.UTC(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 3));
+  const weekYear = anchor.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(weekYear, 0, 4));
+  const jan4Offset = (jan4.getUTCDay() + 6) % 7;
+  const weekOneStart = new Date(jan4);
+  weekOneStart.setUTCDate(jan4.getUTCDate() - jan4Offset);
+  const week = 1 + Math.round((anchor - weekOneStart) / 604800000);
+  return `${weekYear}-W${String(week).padStart(2, '0')}`;
+}
+
+function parseWeekInputValue(value) {
+  const match = /^(\d{4})-W(\d{2})$/.exec(String(value || '').trim());
+  if (!match) return getWeekStartDate(state.date || todayISO());
+
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Offset = (jan4.getUTCDay() + 6) % 7;
+  const weekOneStart = new Date(jan4);
+  weekOneStart.setUTCDate(jan4.getUTCDate() - jan4Offset);
+  const monday = new Date(weekOneStart);
+  monday.setUTCDate(weekOneStart.getUTCDate() + (week - 1) * 7);
+  return new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
+}
+
+function getWeekDates(weekValue) {
+  const weekStart = parseWeekInputValue(weekValue);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
+    return toIsoDateString(date);
+  });
+}
+
+function getStoredDashboardWeek() {
+  const stored = localStorage.getItem(DASHBOARD_WEEK_KEY);
+  if (/^\d{4}-W\d{2}$/.test(stored || '')) return stored;
+  return formatWeekInputValue(state.date || todayISO());
+}
+
+function updateDashboardWeekLabel() {
+  if (!dashboardWeekLabel) return;
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
+  dashboardWeekLabel.textContent = `Week van ${formatShortDate(dates[0])} t/m ${formatShortDate(dates[6])}`;
+}
+
+function setSelectedDashboardWeek(value, options = {}) {
+  selectedDashboardWeek = /^\d{4}-W\d{2}$/.test(value || '')
+    ? value
+    : formatWeekInputValue(state.date || todayISO());
+  if (dashboardWeekInput) dashboardWeekInput.value = selectedDashboardWeek;
+  if (!options.skipPersist) localStorage.setItem(DASHBOARD_WEEK_KEY, selectedDashboardWeek);
+  updateDashboardWeekLabel();
+  if (!options.skipRefresh) refreshProgress();
 }
 
 function computeWeekTotals(all, dates) {
@@ -1431,11 +1622,11 @@ function computeWeekTotals(all, dates) {
       const name = (exercise.name || '').trim();
       if (!name) return;
       const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set), 0);
-      const { primary, secondary } = resolveExerciseMuscles(exercise);
+      const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
       primaryTotals[primary][index] += volume;
-      if (secondary && secondaryTotals[secondary]) {
-        secondaryTotals[secondary][index] += volume;
-      }
+      secondaryGroups.forEach(group => {
+        if (secondaryTotals[group]) secondaryTotals[group][index] += volume;
+      });
     });
   });
 
@@ -1651,7 +1842,7 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
 }
 
 function renderWeekCharts(all) {
-  const dates = getWeekDates(state.date);
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
   const { primaryTotals, secondaryTotals } = computeWeekTotals(all, dates);
 
   const primaryGroups = PRIMARY_GROUPS.filter(group => primaryTotals[group].some(value => value > 0));
@@ -1706,6 +1897,7 @@ let activeExerciseId = null;
 let focusExerciseName = '';
 let chartTooltip = null;
 let selectedRoutineDay = 'monday';
+let selectedDashboardWeek = '';
 
 function ensureActiveExercise() {
   if (!state.exercises.length) {
@@ -2165,7 +2357,7 @@ function buildRowsForDay(date, day) {
   (day.exercises || []).forEach(exercise => {
     const exerciseName = (exercise.name || '').trim() || 'Oefening';
     const notes = exercise.notes || '';
-    const { primary, secondary } = resolveExerciseMuscles(exercise);
+    const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
 
     (exercise.sets || []).forEach((set, index) => {
       const repsValue = Number(set.reps);
@@ -2190,7 +2382,7 @@ function buildRowsForDay(date, day) {
         exerciseName,
         exercise.id || '',
         primary,
-        secondary,
+        secondaryGroups.join(', '),
         index + 1,
         reps,
         weight,
@@ -2241,7 +2433,7 @@ function buildRoutineRows(routines) {
         day.label,
         item.name.trim(),
         resolved.primary,
-        resolved.secondary
+        resolved.secondaryGroups.join(', ')
       ]);
     });
   });
@@ -2259,7 +2451,7 @@ function buildRoutinesFromSheets(rows) {
       id: uid(),
       name,
       primaryGroup: sanitizeMuscleGroup(row[3]) || '',
-      secondaryGroup: sanitizeMuscleGroup(row[4]) || ''
+      secondaryGroups: normalizeSecondaryGroups(row[4], sanitizeMuscleGroup(row[3]) || '')
     });
   });
   return normalizeRoutineState(routines);
@@ -2420,14 +2612,14 @@ function parseSetRow(rawRow) {
   const looksLikeV13 = row.length >= 13 && isLikelyExerciseId(col3);
   const looksLikeV12 = row.length >= 12
     && (col3 === '' || PRIMARY_GROUPS.includes(col3))
-    && (col4 === '' || PRIMARY_GROUPS.includes(col4))
+    && (col4 === '' || normalizeSecondaryGroups(col4).length > 0)
     && Number.isFinite(col5);
 
   if (looksLikeV13) {
     return {
       exerciseId: col3,
       primary: sanitizeMuscleGroup(row[4]),
-      secondary: sanitizeMuscleGroup(row[5]),
+      secondaryGroups: normalizeSecondaryGroups(row[5], sanitizeMuscleGroup(row[4])),
       setNumber: Number(row[6]) || 0,
       reps: parseMaybeNumber(row[7]),
       weight: parseMaybeNumber(row[8]),
@@ -2441,7 +2633,7 @@ function parseSetRow(rawRow) {
     return {
       exerciseId: '',
       primary: sanitizeMuscleGroup(row[3]),
-      secondary: sanitizeMuscleGroup(row[4]),
+      secondaryGroups: normalizeSecondaryGroups(row[4], sanitizeMuscleGroup(row[3])),
       setNumber: Number(row[5]) || 0,
       reps: parseMaybeNumber(row[6]),
       weight: parseMaybeNumber(row[7]),
@@ -2454,7 +2646,7 @@ function parseSetRow(rawRow) {
   return {
     exerciseId: '',
     primary: '',
-    secondary: '',
+    secondaryGroups: [],
     setNumber: Number(row[3]) || 0,
     reps: parseMaybeNumber(row[4]),
     weight: parseMaybeNumber(row[5]),
@@ -2486,7 +2678,7 @@ function buildAllFromSheets(daysRows, setsRows) {
     const parsed = parseSetRow(row);
     const exerciseId = parsed.exerciseId;
     const primary = parsed.primary;
-    const secondary = parsed.secondary;
+    const secondaryGroups = parsed.secondaryGroups || [];
     const setNumber = parsed.setNumber;
     const reps = parsed.reps;
     const weight = parsed.weight;
@@ -2502,7 +2694,7 @@ function buildAllFromSheets(daysRows, setsRows) {
     }
 
     if (!exerciseIndex[date]) exerciseIndex[date] = {};
-    const fallbackKey = `${exerciseName}::${primary}::${secondary}`;
+    const fallbackKey = `${exerciseName}::${primary}::${secondaryGroups.join('|')}`;
     let exerciseKey = exerciseId;
     if (!exerciseKey) {
       if (!fallbackOccurrence[date]) fallbackOccurrence[date] = {};
@@ -2521,7 +2713,7 @@ function buildAllFromSheets(daysRows, setsRows) {
           name: exerciseName,
           notes: '',
           primaryGroup: primary,
-          secondaryGroup: secondary,
+          secondaryGroups: [...secondaryGroups],
           sets: []
         },
         sets: []
@@ -2530,7 +2722,9 @@ function buildAllFromSheets(daysRows, setsRows) {
 
     const entry = exerciseIndex[date][exerciseKey];
     if (!entry.exercise.primaryGroup && primary) entry.exercise.primaryGroup = primary;
-    if (!entry.exercise.secondaryGroup && secondary) entry.exercise.secondaryGroup = secondary;
+    if ((!entry.exercise.secondaryGroups || !entry.exercise.secondaryGroups.length) && secondaryGroups.length) {
+      entry.exercise.secondaryGroups = [...secondaryGroups];
+    }
     if (!entry.exercise.notes && notes) entry.exercise.notes = notes;
 
     entry.sets.push({
@@ -2688,6 +2882,7 @@ addExerciseMiniBtn.addEventListener('click', addExercise);
 addExerciseEmptyBtn.addEventListener('click', addExercise);
 if (addRoutineToDayBtn) addRoutineToDayBtn.addEventListener('click', addRoutineExercisesToCurrentDay);
 if (addRoutineExerciseBtn) addRoutineExerciseBtn.addEventListener('click', addRoutineExercise);
+if (saveRoutineDayBtn) saveRoutineDayBtn.addEventListener('click', saveRoutineDay);
 
 saveDayBtn.addEventListener('click', () => {
   persist();
@@ -2707,6 +2902,18 @@ bodyweightInput.addEventListener('input', () => {
 if (routineSourceDaySelect) {
   routineSourceDaySelect.addEventListener('change', () => {
     updateRoutineApplyButton();
+  });
+}
+
+if (dashboardWeekInput) {
+  dashboardWeekInput.addEventListener('change', () => {
+    setSelectedDashboardWeek(dashboardWeekInput.value);
+  });
+}
+
+if (dashboardWeekNowBtn) {
+  dashboardWeekNowBtn.addEventListener('click', () => {
+    setSelectedDashboardWeek(formatWeekInputValue(todayISO()));
   });
 }
 
@@ -2903,9 +3110,11 @@ function init() {
   loadSyncConfig();
   setActivePage(getPreferredPage(), { skipScroll: true });
   selectedRoutineDay = getStoredRoutineDay();
+  selectedDashboardWeek = getStoredDashboardWeek();
   const today = todayISO();
   dateInput.value = today;
   loadDay(today);
+  setSelectedDashboardWeek(selectedDashboardWeek, { skipRefresh: true, skipPersist: true });
   renderExercises();
   renderRoutinePage();
   refreshProgress();

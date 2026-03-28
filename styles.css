@@ -205,8 +205,23 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   align-items: start;
 }
 
-.dashboard-grid > :nth-child(3),
-.dashboard-grid > :nth-child(5) {
+.dashboard-toolbar {
+  grid-column: 1 / -1;
+}
+
+.toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.compact-control {
+  min-width: 220px;
+}
+
+.dashboard-grid > :nth-child(4),
+.dashboard-grid > :nth-child(6) {
   grid-column: span 2;
 }
 
@@ -324,6 +339,47 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.secondary-control {
+  align-self: start;
+}
+
+.secondary-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  min-height: 46px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: #fff;
+}
+
+.secondary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 107, 102, 0.07);
+  border: 1px solid rgba(15, 107, 102, 0.14);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.secondary-chip input {
+  margin: 0;
+}
+
+.secondary-chip.disabled {
+  opacity: 0.45;
+}
+
+.secondary-empty {
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .exercise-notes { min-height: 70px; resize: vertical; }
@@ -753,9 +809,12 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
-  .dashboard-grid > :nth-child(3),
-  .dashboard-grid > :nth-child(5) {
+  .dashboard-grid > :nth-child(4),
+  .dashboard-grid > :nth-child(6) {
     grid-column: auto;
+  }
+  .toolbar-row {
+    align-items: stretch;
   }
   .exercise-meta { grid-template-columns: 1fr; }
   .muscle-grid { grid-template-columns: 1fr; }
@@ -764,4 +823,5 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .exercise-name-row { grid-template-columns: 1fr; }
   .quick-grid { grid-template-columns: 1fr 1fr; }
   .routine-head { grid-template-columns: 1fr; }
+  .secondary-picker { padding: 8px; }
 }
