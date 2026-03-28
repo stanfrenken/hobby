@@ -85,7 +85,8 @@ function hasAnyRoutineData(routines) {
 function hasAnyLocalData(payload) {
   return Object.values(payload?.days || {}).some(dayHasContent)
     || hasAnyRoutineData(payload?.routines)
-    || (payload?.customExercises || []).length > 0;
+    || (payload?.customExercises || []).length > 0
+    || (payload?.progressEntries || []).length > 0;
 }
 
 function buildEnvelope(payload) {
@@ -95,7 +96,8 @@ function buildEnvelope(payload) {
     updatedAt: Math.max(Date.now(), payloadUpdatedAt, driveState.lastLocalChangeAt || 0),
     days: payload?.days || {},
     routines: payload?.routines || appApi.createEmptyRoutines(),
-    customExercises: payload?.customExercises || []
+    customExercises: payload?.customExercises || [],
+    progressEntries: payload?.progressEntries || []
   };
 }
 
@@ -103,7 +105,10 @@ function getPayloadUpdatedAt(payload) {
   const dayStamp = Object.values(payload?.days || {}).reduce((max, day) => {
     return Math.max(max, Number(day?.updatedAt) || 0);
   }, 0);
-  return Math.max(dayStamp, driveState.lastLocalChangeAt || 0);
+  const progressStamp = (payload?.progressEntries || []).reduce((max, entry) => {
+    return Math.max(max, Number(entry?.updatedAt) || 0, Number(entry?.analyzedAt) || 0);
+  }, 0);
+  return Math.max(dayStamp, progressStamp, driveState.lastLocalChangeAt || 0);
 }
 
 function normalizeRemoteEnvelope(payload) {
@@ -114,7 +119,8 @@ function normalizeRemoteEnvelope(payload) {
         ? payload.routines
         : appApi.createEmptyRoutines()
     ),
-    customExercises: Array.isArray(payload?.customExercises) ? payload.customExercises : []
+    customExercises: Array.isArray(payload?.customExercises) ? payload.customExercises : [],
+    progressEntries: Array.isArray(payload?.progressEntries) ? payload.progressEntries : []
   };
 }
 

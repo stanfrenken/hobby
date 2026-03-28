@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260328e" />
+  <link rel="stylesheet" href="styles.css?v=20260328f" />
 </head>
 <body>
   <div class="bg"></div>
@@ -20,6 +20,7 @@
       <nav class="page-nav" aria-label="Navigatie">
         <button id="pageLogBtn" class="page-tab active" type="button">Logboek</button>
         <button id="pageDashboardBtn" class="page-tab" type="button">Dashboard</button>
+        <button id="pageProgressBtn" class="page-tab" type="button">Progressie</button>
         <button id="pageRoutinesBtn" class="page-tab" type="button">Vaste dagen</button>
       </nav>
     </header>
@@ -201,6 +202,73 @@
         </div>
       </section>
 
+      <section id="progressPage" class="page">
+        <div class="page-shell">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Weekly Check-In</h2>
+                <p>Upload je weekfoto, noteer je gewicht en laat AI er eerlijk naar kijken.</p>
+              </div>
+              <button id="saveProgressEntryBtn" class="primary" type="button">Weekmoment opslaan</button>
+            </div>
+            <div class="controls progress-controls">
+              <label class="control">
+                <span>Datum</span>
+                <input id="progressDateInput" type="date" />
+              </label>
+              <label class="control">
+                <span>Gewicht (kg)</span>
+                <input id="progressWeightInput" type="number" min="0" step="0.1" placeholder="Bijv. 82.4" />
+              </label>
+              <label class="control progress-photo-input">
+                <span>Weekfoto</span>
+                <input id="progressPhotoInput" type="file" accept="image/*" />
+              </label>
+            </div>
+            <div class="progress-ai-card">
+              <label class="control">
+                <span>OpenAI API key</span>
+                <input id="visionApiKeyInput" type="password" placeholder="sk-..." autocomplete="off" />
+              </label>
+              <label class="control">
+                <span>Model</span>
+                <select id="visionModelSelect">
+                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                  <option value="gpt-4.1">gpt-4.1</option>
+                </select>
+              </label>
+              <div class="control buttons">
+                <button id="saveVisionSettingsBtn" class="ghost" type="button">Bewaar AI-instellingen</button>
+                <button id="analyzeProgressBtn" class="ghost" type="button">Analyseer met AI</button>
+              </div>
+              <p id="visionStatus" class="hint">Je API key blijft lokaal op dit apparaat opgeslagen.</p>
+            </div>
+            <div class="progress-entry-preview">
+              <div id="progressPhotoPreview" class="progress-photo-preview empty">Nog geen foto gekozen.</div>
+              <div class="progress-entry-summary">
+                <span id="progressWeekBadge" class="badge">Week check-in</span>
+                <h3 id="progressEntryTitle">Nieuwe progressie-entry</h3>
+                <p id="progressEntryMeta" class="hint">Kies een datum en foto om deze week vast te leggen.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Progressie Timeline</h2>
+                <p>Scroll door je wekelijkse fysiek, gewicht en AI-feedback.</p>
+              </div>
+            </div>
+            <div id="progressTimeline" class="progress-timeline"></div>
+            <div id="progressEmpty" class="empty compact">
+              <p>Voeg je eerste weekfoto toe om je progressie-timeline op te bouwen.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section id="routinesPage" class="page">
         <div class="page-shell">
           <section class="panel">
@@ -337,7 +405,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260328e"></script>
-  <script type="module" src="drive-sync.js?v=20260328e"></script>
+  <script src="app.js?v=20260328f"></script>
+  <script type="module" src="drive-sync.js?v=20260328f"></script>
 </body>
 </html>

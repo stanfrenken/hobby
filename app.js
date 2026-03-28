@@ -6,6 +6,8 @@ const ROUTINES_KEY = 'fitnessLog.routines.v1';
 const UI_PAGE_KEY = 'fitnessLog.uiPage.v1';
 const ROUTINE_UI_KEY = 'fitnessLog.routineDay.v1';
 const DASHBOARD_WEEK_KEY = 'fitnessLog.dashboardWeek.v1';
+const PROGRESS_ENTRIES_KEY = 'fitnessLog.progressEntries.v1';
+const VISION_SETTINGS_KEY = 'fitnessLog.visionSettings.v1';
 
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
@@ -13,9 +15,11 @@ const bodyweightInput = document.getElementById('bodyweightInput');
 const routineSourceDaySelect = document.getElementById('routineSourceDay');
 const pageLogBtn = document.getElementById('pageLogBtn');
 const pageDashboardBtn = document.getElementById('pageDashboardBtn');
+const pageProgressBtn = document.getElementById('pageProgressBtn');
 const pageRoutinesBtn = document.getElementById('pageRoutinesBtn');
 const logPage = document.getElementById('logPage');
 const dashboardPage = document.getElementById('dashboardPage');
+const progressPage = document.getElementById('progressPage');
 const routinesPage = document.getElementById('routinesPage');
 const addExerciseBtn = document.getElementById('addExercise');
 const addRoutineToDayBtn = document.getElementById('addRoutineToDayBtn');
@@ -46,6 +50,21 @@ const focusTable = document.getElementById('focusTable');
 const focusEmpty = document.getElementById('focusEmpty');
 const bodyweightChart = document.getElementById('bodyweightChart');
 const bodyweightHint = document.getElementById('bodyweightHint');
+const progressDateInput = document.getElementById('progressDateInput');
+const progressWeightInput = document.getElementById('progressWeightInput');
+const progressPhotoInput = document.getElementById('progressPhotoInput');
+const progressPhotoPreview = document.getElementById('progressPhotoPreview');
+const progressWeekBadge = document.getElementById('progressWeekBadge');
+const progressEntryTitle = document.getElementById('progressEntryTitle');
+const progressEntryMeta = document.getElementById('progressEntryMeta');
+const progressTimeline = document.getElementById('progressTimeline');
+const progressEmpty = document.getElementById('progressEmpty');
+const saveProgressEntryBtn = document.getElementById('saveProgressEntryBtn');
+const analyzeProgressBtn = document.getElementById('analyzeProgressBtn');
+const visionApiKeyInput = document.getElementById('visionApiKeyInput');
+const visionModelSelect = document.getElementById('visionModelSelect');
+const saveVisionSettingsBtn = document.getElementById('saveVisionSettingsBtn');
+const visionStatus = document.getElementById('visionStatus');
 const routineDayTabs = document.getElementById('routineDayTabs');
 const routineList = document.getElementById('routineList');
 const routineEmpty = document.getElementById('routineEmpty');
@@ -114,12 +133,14 @@ const AUTO_PULL_MIN_GAP_MS = 8000;
 const AUTO_PULL_DIRTY_GRACE_MS = 1500;
 
 function setActivePage(page, options = {}) {
-  const nextPage = page === 'dashboard' || page === 'routines' ? page : 'log';
+  const nextPage = page === 'dashboard' || page === 'routines' || page === 'progress' ? page : 'log';
   if (logPage) logPage.classList.toggle('active', nextPage === 'log');
   if (dashboardPage) dashboardPage.classList.toggle('active', nextPage === 'dashboard');
+  if (progressPage) progressPage.classList.toggle('active', nextPage === 'progress');
   if (routinesPage) routinesPage.classList.toggle('active', nextPage === 'routines');
   if (pageLogBtn) pageLogBtn.classList.toggle('active', nextPage === 'log');
   if (pageDashboardBtn) pageDashboardBtn.classList.toggle('active', nextPage === 'dashboard');
+  if (pageProgressBtn) pageProgressBtn.classList.toggle('active', nextPage === 'progress');
   if (pageRoutinesBtn) pageRoutinesBtn.classList.toggle('active', nextPage === 'routines');
   if (!options.skipPersist) {
     localStorage.setItem(UI_PAGE_KEY, nextPage);
@@ -131,7 +152,7 @@ function setActivePage(page, options = {}) {
 
 function getPreferredPage() {
   const saved = localStorage.getItem(UI_PAGE_KEY);
-  return saved === 'dashboard' || saved === 'routines' ? saved : 'log';
+  return saved === 'dashboard' || saved === 'routines' || saved === 'progress' ? saved : 'log';
 }
 
 function todayISO() {
@@ -188,6 +209,64 @@ function saveCustomExerciseLibrary(items) {
     .map(item => normalizeExerciseProfile(item))
     .filter(item => item.name);
   localStorage.setItem(EXERCISE_LIBRARY_KEY, JSON.stringify(normalized));
+}
+
+function normalizeProgressEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .map(entry => {
+      const date = normalizeDateValue(entry?.date);
+      if (!date) return null;
+      return {
+        id: String(entry?.id || uid()),
+        date,
+        bodyweight: entry?.bodyweight ?? '',
+        imageData: typeof entry?.imageData === 'string' ? entry.imageData : '',
+        aiSummary: typeof entry?.aiSummary === 'string' ? entry.aiSummary : '',
+        aiHeadline: typeof entry?.aiHeadline === 'string' ? entry.aiHeadline : '',
+        aiObservations: Array.isArray(entry?.aiObservations) ? entry.aiObservations.map(item => String(item || '').trim()).filter(Boolean) : [],
+        aiVerdict: typeof entry?.aiVerdict === 'string' ? entry.aiVerdict : '',
+        analyzedAt: Number(entry?.analyzedAt) || 0,
+        updatedAt: Number(entry?.updatedAt) || 0
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function loadProgressEntries() {
+  const raw = localStorage.getItem(PROGRESS_ENTRIES_KEY);
+  if (!raw) return [];
+  try {
+    return normalizeProgressEntries(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+function saveProgressEntries(entries) {
+  localStorage.setItem(PROGRESS_ENTRIES_KEY, JSON.stringify(normalizeProgressEntries(entries)));
+}
+
+function loadVisionSettings() {
+  const raw = localStorage.getItem(VISION_SETTINGS_KEY);
+  if (!raw) return { apiKey: '', model: 'gpt-4.1-mini' };
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      apiKey: String(parsed?.apiKey || '').trim(),
+      model: String(parsed?.model || 'gpt-4.1-mini').trim() || 'gpt-4.1-mini'
+    };
+  } catch {
+    return { apiKey: '', model: 'gpt-4.1-mini' };
+  }
+}
+
+function saveVisionSettings(settings) {
+  localStorage.setItem(VISION_SETTINGS_KEY, JSON.stringify({
+    apiKey: String(settings?.apiKey || '').trim(),
+    model: String(settings?.model || 'gpt-4.1-mini').trim() || 'gpt-4.1-mini'
+  }));
 }
 
 function createEmptyRoutines() {
@@ -1898,6 +1977,7 @@ let focusExerciseName = '';
 let chartTooltip = null;
 let selectedRoutineDay = 'monday';
 let selectedDashboardWeek = '';
+let progressDraftImage = '';
 
 function ensureActiveExercise() {
   if (!state.exercises.length) {
@@ -2154,6 +2234,326 @@ function renderBodyweightTrend(all) {
   }
 }
 
+function setVisionStatus(message) {
+  if (visionStatus) visionStatus.textContent = message;
+}
+
+function formatWeekBadge(value) {
+  const weekCode = formatWeekInputValue(value);
+  return weekCode.replace('-W', ' · week ');
+}
+
+function getProgressEntryByDate(date) {
+  return loadProgressEntries().find(entry => entry.date === date) || null;
+}
+
+function getDefaultBodyweightForDate(date) {
+  const all = loadAll();
+  const day = all[date];
+  if (day?.bodyweight !== '' && day?.bodyweight !== undefined && day?.bodyweight !== null) {
+    return day.bodyweight;
+  }
+  return '';
+}
+
+function fillProgressDraft(date) {
+  const normalizedDate = normalizeDateValue(date) || todayISO();
+  const existing = getProgressEntryByDate(normalizedDate);
+  progressDraftImage = existing?.imageData || '';
+
+  if (progressDateInput) progressDateInput.value = normalizedDate;
+  if (progressWeightInput) {
+    const weight = existing?.bodyweight ?? getDefaultBodyweightForDate(normalizedDate);
+    progressWeightInput.value = weight === '' ? '' : weight;
+  }
+
+  renderProgressDraft(existing || {
+    date: normalizedDate,
+    bodyweight: getDefaultBodyweightForDate(normalizedDate),
+    imageData: progressDraftImage,
+    aiSummary: '',
+    aiHeadline: '',
+    aiObservations: [],
+    aiVerdict: ''
+  });
+}
+
+function renderProgressDraft(entry) {
+  const date = normalizeDateValue(entry?.date) || todayISO();
+  const bodyweight = entry?.bodyweight ?? '';
+  const imageData = entry?.imageData || progressDraftImage || '';
+
+  if (progressWeekBadge) progressWeekBadge.textContent = formatWeekBadge(date);
+  if (progressEntryTitle) progressEntryTitle.textContent = entry?.id ? `Check-in ${formatShortDate(date)}` : 'Nieuwe progressie-entry';
+  if (progressEntryMeta) {
+    progressEntryMeta.textContent = `${formatLongDate(date)}${bodyweight !== '' ? ` · ${formatNumber(Number(bodyweight) || bodyweight)} kg` : ' · nog geen gewicht ingevuld'}`;
+  }
+
+  if (progressPhotoPreview) {
+    progressPhotoPreview.innerHTML = '';
+    progressPhotoPreview.classList.toggle('empty', !imageData);
+    if (imageData) {
+      const img = document.createElement('img');
+      img.src = imageData;
+      img.alt = `Progressiefoto ${date}`;
+      progressPhotoPreview.appendChild(img);
+    } else {
+      progressPhotoPreview.textContent = 'Nog geen foto gekozen.';
+    }
+  }
+}
+
+function getProgressDraftEntry() {
+  const date = normalizeDateValue(progressDateInput?.value || todayISO()) || todayISO();
+  const existing = getProgressEntryByDate(date);
+  return {
+    id: existing?.id || uid(),
+    date,
+    bodyweight: progressWeightInput?.value ?? '',
+    imageData: progressDraftImage || existing?.imageData || '',
+    aiSummary: existing?.aiSummary || '',
+    aiHeadline: existing?.aiHeadline || '',
+    aiObservations: existing?.aiObservations || [],
+    aiVerdict: existing?.aiVerdict || '',
+    analyzedAt: existing?.analyzedAt || 0,
+    updatedAt: Date.now()
+  };
+}
+
+function upsertProgressEntry(entry) {
+  const entries = loadProgressEntries().filter(item => item.date !== entry.date);
+  entries.push({
+    ...entry,
+    updatedAt: Date.now()
+  });
+  saveProgressEntries(entries);
+  emitCloudChange('meta');
+  renderProgressTimeline();
+}
+
+function deleteProgressEntry(entryDate) {
+  const entries = loadProgressEntries().filter(entry => entry.date !== entryDate);
+  saveProgressEntries(entries);
+  emitCloudChange('meta');
+  renderProgressTimeline();
+  fillProgressDraft(progressDateInput?.value || todayISO());
+}
+
+function loadVisionSettingsIntoForm() {
+  const settings = loadVisionSettings();
+  if (visionApiKeyInput) visionApiKeyInput.value = settings.apiKey;
+  if (visionModelSelect) visionModelSelect.value = settings.model;
+  setVisionStatus(settings.apiKey
+    ? 'OpenAI key staat lokaal klaar op dit apparaat.'
+    : 'Je API key blijft lokaal op dit apparaat opgeslagen.');
+}
+
+function saveVisionSettingsFromForm() {
+  saveVisionSettings({
+    apiKey: visionApiKeyInput?.value || '',
+    model: visionModelSelect?.value || 'gpt-4.1-mini'
+  });
+  setVisionStatus('AI-instellingen lokaal opgeslagen op dit apparaat.');
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Kon de foto niet lezen.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Kon de foto niet laden.'));
+    img.src = src;
+  });
+}
+
+async function compressImageFile(file) {
+  const source = await fileToDataUrl(file);
+  const image = await loadImageElement(source);
+  const maxWidth = 1280;
+  const scale = Math.min(1, maxWidth / image.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
+
+function getPreviousProgressEntry(date) {
+  const entries = loadProgressEntries()
+    .filter(entry => entry.date < date && entry.imageData)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return entries[entries.length - 1] || null;
+}
+
+function extractResponseText(response) {
+  const parts = [];
+  (response?.output || []).forEach(item => {
+    if (item?.type !== 'message') return;
+    (item.content || []).forEach(content => {
+      if (content?.type === 'output_text' && content.text) {
+        parts.push(content.text);
+      }
+    });
+  });
+  return parts.join('\n').trim();
+}
+
+async function analyzeProgressEntry() {
+  const entry = getProgressDraftEntry();
+  if (!entry.imageData) {
+    alert('Voeg eerst een weekfoto toe voordat je AI-analyse start.');
+    return;
+  }
+
+  const liveSettings = {
+    apiKey: String(visionApiKeyInput?.value || '').trim(),
+    model: String(visionModelSelect?.value || 'gpt-4.1-mini').trim() || 'gpt-4.1-mini'
+  };
+  if (liveSettings.apiKey) {
+    saveVisionSettings(liveSettings);
+  }
+  const settings = liveSettings.apiKey ? liveSettings : loadVisionSettings();
+  if (!settings.apiKey) {
+    alert('Vul eerst je OpenAI API key in en sla die op.');
+    return;
+  }
+
+  const previous = getPreviousProgressEntry(entry.date);
+  const comparisonLine = previous
+    ? `Vergelijk de huidige foto met de vorige check-in van ${formatShortDate(previous.date)} (${previous.bodyweight || '?'} kg).`
+    : 'Er is nog geen eerdere foto beschikbaar, beoordeel alleen de huidige vorm.';
+
+  setVisionStatus('AI bekijkt je foto en schrijft een eerlijke samenvatting...');
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${settings.apiKey}`
+    },
+    body: JSON.stringify({
+      model: settings.model || 'gpt-4.1-mini',
+      input: [{
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: `Je bent een eerlijke physique coach. Geef in het Nederlands een nuchtere, eerlijke beoordeling van zichtbare spiergroei of het gebrek daaraan. Let op licht, pose en pomp; noem onzekerheid als dat meespeelt. ${comparisonLine} Huidige datum: ${entry.date}. Huidig gewicht: ${entry.bodyweight || 'onbekend'} kg. Geef JSON met headline, verdict, summary en observations (max 4 korte bullets).`
+          },
+          ...(previous ? [
+            { type: 'input_text', text: `Vorige foto (${previous.date}, ${previous.bodyweight || 'onbekend'} kg):` },
+            { type: 'input_image', image_url: previous.imageData, detail: 'high' }
+          ] : []),
+          { type: 'input_text', text: `Huidige foto (${entry.date}, ${entry.bodyweight || 'onbekend'} kg):` },
+          { type: 'input_image', image_url: entry.imageData, detail: 'high' }
+        ]
+      }],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'physique_progress_review',
+          strict: true,
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              headline: { type: 'string' },
+              verdict: { type: 'string' },
+              summary: { type: 'string' },
+              observations: {
+                type: 'array',
+                items: { type: 'string' },
+                maxItems: 4
+              }
+            },
+            required: ['headline', 'verdict', 'summary', 'observations']
+          }
+        }
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `OpenAI fout ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = extractResponseText(data);
+  const parsed = JSON.parse(text);
+
+  const updated = {
+    ...entry,
+    aiHeadline: parsed.headline || '',
+    aiVerdict: parsed.verdict || '',
+    aiSummary: parsed.summary || '',
+    aiObservations: Array.isArray(parsed.observations) ? parsed.observations : [],
+    analyzedAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  upsertProgressEntry(updated);
+  fillProgressDraft(updated.date);
+  setVisionStatus('AI-samenvatting opgeslagen.');
+}
+
+function renderProgressTimeline() {
+  if (!progressTimeline || !progressEmpty) return;
+  const entries = loadProgressEntries().sort((a, b) => b.date.localeCompare(a.date));
+  progressTimeline.innerHTML = '';
+  progressEmpty.style.display = entries.length ? 'none' : 'block';
+
+  entries.forEach(entry => {
+    const article = document.createElement('article');
+    article.className = 'timeline-card';
+    article.innerHTML = `
+      <div class="timeline-media">${entry.imageData ? `<img src="${entry.imageData}" alt="Progressiefoto ${entry.date}" />` : ''}</div>
+      <div class="timeline-content">
+        <div class="timeline-head">
+          <span class="timeline-week">${formatWeekBadge(entry.date)}</span>
+          <span class="badge">${formatShortDate(entry.date)}</span>
+        </div>
+        <div class="timeline-meta">
+          <span>Datum: ${formatLongDate(entry.date)}</span>
+          <span>Gewicht: ${entry.bodyweight !== '' ? `${formatNumber(Number(entry.bodyweight) || entry.bodyweight)} kg` : 'niet ingevuld'}</span>
+        </div>
+        <div class="timeline-ai">
+          <h4>${entry.aiHeadline || 'Nog geen AI-analyse'}</h4>
+          <p>${entry.aiSummary || 'Voeg een foto toe en klik op "Analyseer met AI" om een eerlijke samenvatting te laten schrijven.'}</p>
+          ${entry.aiVerdict ? `<strong>${entry.aiVerdict}</strong>` : '<span class="timeline-placeholder">Nog geen verdict</span>'}
+          ${entry.aiObservations?.length ? `<ul class="timeline-observations">${entry.aiObservations.map(item => `<li>${item}</li>`).join('')}</ul>` : ''}
+        </div>
+        <div class="timeline-actions">
+          <button class="ghost timeline-edit" type="button" data-date="${entry.date}">Bewerk</button>
+          <button class="ghost timeline-analyze" type="button" data-date="${entry.date}">Analyseer opnieuw</button>
+          <button class="danger timeline-delete" type="button" data-date="${entry.date}">Verwijder</button>
+        </div>
+      </div>
+    `;
+    progressTimeline.appendChild(article);
+  });
+}
+
+function saveProgressEntry() {
+  const entry = getProgressDraftEntry();
+  if (!entry.imageData) {
+    alert('Voeg eerst een weekfoto toe voordat je deze week opslaat.');
+    return;
+  }
+  upsertProgressEntry(entry);
+  fillProgressDraft(entry.date);
+  flashButtonLabel(saveProgressEntryBtn, 'Opgeslagen', 1100);
+}
+
 function flashButtonLabel(button, label, duration = 900) {
   if (!button) return;
   const original = button.textContent;
@@ -2251,7 +2651,8 @@ function exportData() {
     version: 2,
     days: all,
     routines: loadRoutines(),
-    customExercises: loadCustomExerciseLibrary()
+    customExercises: loadCustomExerciseLibrary(),
+    progressEntries: loadProgressEntries()
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
@@ -2270,10 +2671,13 @@ function importData(file) {
       saveAll(nextDays);
       if (data?.routines) saveRoutines(data.routines);
       if (Array.isArray(data?.customExercises)) saveCustomExerciseLibrary(data.customExercises);
+      if (Array.isArray(data?.progressEntries)) saveProgressEntries(data.progressEntries);
       loadDay(state.date);
       renderExercises();
       renderRoutinePage();
       refreshProgress();
+      renderProgressTimeline();
+      fillProgressDraft(progressDateInput?.value || state.date || todayISO());
       emitCloudChange('all');
     } catch {
       alert('Kon JSON niet lezen.');
@@ -2871,6 +3275,12 @@ if (pageDashboardBtn) {
   });
 }
 
+if (pageProgressBtn) {
+  pageProgressBtn.addEventListener('click', () => {
+    setActivePage('progress');
+  });
+}
+
 if (pageRoutinesBtn) {
   pageRoutinesBtn.addEventListener('click', () => {
     setActivePage('routines');
@@ -2917,6 +3327,46 @@ if (dashboardWeekNowBtn) {
   });
 }
 
+if (progressDateInput) {
+  progressDateInput.addEventListener('change', () => {
+    fillProgressDraft(progressDateInput.value || todayISO());
+  });
+}
+
+if (progressWeightInput) {
+  progressWeightInput.addEventListener('input', () => {
+    renderProgressDraft(getProgressDraftEntry());
+  });
+}
+
+if (progressPhotoInput) {
+  progressPhotoInput.addEventListener('change', async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      progressDraftImage = await compressImageFile(file);
+      renderProgressDraft(getProgressDraftEntry());
+      setVisionStatus('Weekfoto geladen. Sla hem op of laat AI direct meekijken.');
+    } catch (error) {
+      alert(error.message || 'Kon de foto niet verwerken.');
+    } finally {
+      event.target.value = '';
+    }
+  });
+}
+
+if (saveProgressEntryBtn) saveProgressEntryBtn.addEventListener('click', saveProgressEntry);
+if (saveVisionSettingsBtn) saveVisionSettingsBtn.addEventListener('click', saveVisionSettingsFromForm);
+if (analyzeProgressBtn) {
+  analyzeProgressBtn.addEventListener('click', async () => {
+    try {
+      await analyzeProgressEntry();
+    } catch (error) {
+      setVisionStatus(`AI-fout: ${error.message}`);
+    }
+  });
+}
+
 if (routineDayTabs) {
   routineDayTabs.addEventListener('click', event => {
     const button = event.target.closest('[data-day]');
@@ -2932,6 +3382,38 @@ if (routineList) {
     if (event.target.classList.contains('remove-routine')) {
       const card = event.target.closest('.routine-card');
       if (card) removeRoutineExercise(card.dataset.id);
+    }
+  });
+}
+
+if (progressTimeline) {
+  progressTimeline.addEventListener('click', async event => {
+    const editBtn = event.target.closest('.timeline-edit');
+    if (editBtn) {
+      fillProgressDraft(editBtn.dataset.date);
+      setActivePage('progress');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const analyzeBtn = event.target.closest('.timeline-analyze');
+    if (analyzeBtn) {
+      fillProgressDraft(analyzeBtn.dataset.date);
+      setActivePage('progress');
+      try {
+        await analyzeProgressEntry();
+      } catch (error) {
+        setVisionStatus(`AI-fout: ${error.message}`);
+      }
+      return;
+    }
+
+    const deleteBtn = event.target.closest('.timeline-delete');
+    if (deleteBtn) {
+      const targetDate = deleteBtn.dataset.date;
+      if (confirm(`Weet je zeker dat je de progressie-entry van ${formatShortDate(targetDate)} wilt verwijderen?`)) {
+        deleteProgressEntry(targetDate);
+      }
     }
   });
 }
@@ -3066,7 +3548,8 @@ function getCloudPayload() {
   return {
     days: all,
     routines: loadRoutines(),
-    customExercises: loadCustomExerciseLibrary()
+    customExercises: loadCustomExerciseLibrary(),
+    progressEntries: loadProgressEntries()
   };
 }
 
@@ -3076,12 +3559,14 @@ function applyCloudPayload(payload, options = {}) {
     ? payload.routines
     : createEmptyRoutines();
   const nextExercises = Array.isArray(payload?.customExercises) ? payload.customExercises : [];
+  const nextProgressEntries = Array.isArray(payload?.progressEntries) ? payload.progressEntries : [];
 
   window.__fitnessApplyingRemote = true;
   try {
     saveAll(nextDays);
     saveRoutines(nextRoutines);
     saveCustomExerciseLibrary(nextExercises);
+    saveProgressEntries(nextProgressEntries);
     if (options.clearSessionProtection !== false) {
       sessionProtectedDates.clear();
     }
@@ -3091,6 +3576,8 @@ function applyCloudPayload(payload, options = {}) {
     renderExercises();
     renderRoutinePage();
     refreshProgress();
+    renderProgressTimeline();
+    fillProgressDraft(progressDateInput?.value || activeDate);
   } finally {
     window.__fitnessApplyingRemote = false;
   }
@@ -3115,8 +3602,11 @@ function init() {
   dateInput.value = today;
   loadDay(today);
   setSelectedDashboardWeek(selectedDashboardWeek, { skipRefresh: true, skipPersist: true });
+  loadVisionSettingsIntoForm();
+  fillProgressDraft(today);
   renderExercises();
   renderRoutinePage();
+  renderProgressTimeline();
   refreshProgress();
   maybeAutoPull('init');
   if (!syncState.autoPullIntervalId) {
