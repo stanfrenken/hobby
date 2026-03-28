@@ -288,6 +288,7 @@ function normalizeRoutineState(data) {
     normalized[day.key] = list.map(item => ({
       id: item?.id || uid(),
       name: String(item?.name || '').trim(),
+      notes: String(item?.notes || '').trim(),
       primaryGroup: sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || '',
       secondaryGroups: normalizeSecondaryGroups(
         item?.secondaryGroups ?? item?.secondaryGroup ?? item?.secondary,
@@ -830,11 +831,13 @@ function renderRoutinePage() {
 
     const selectInput = card.querySelector('.routine-select');
     const nameInput = card.querySelector('.routine-name');
+    const notesInput = card.querySelector('.routine-notes');
     const primarySelect = card.querySelector('.routine-primary');
     const secondaryPicker = card.querySelector('.routine-secondary-picker');
 
     populateExerciseSelect(selectInput, catalog, item.name);
     nameInput.value = item.name;
+    if (notesInput) notesInput.value = item.notes || '';
     populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
     const profile = getAutoExerciseProfile(item.name, catalog);
     primarySelect.value = item.primaryGroup || profile?.primary || 'Automatisch';
@@ -854,6 +857,7 @@ function addRoutineExercise() {
   routines[selectedRoutineDay].push({
     id: uid(),
     name: '',
+    notes: '',
     primaryGroup: '',
     secondaryGroups: []
   });
@@ -905,6 +909,10 @@ function handleRoutineInputChange(target) {
     item.secondaryGroups = readSecondaryPickerValues(card, 'routine-secondary', item.primaryGroup);
   }
 
+  if (target.classList.contains('routine-notes')) {
+    item.notes = target.value;
+  }
+
   persistRoutines(routines, { rerenderRoutine: false });
 }
 
@@ -930,7 +938,7 @@ function addRoutineExercisesToCurrentDay() {
     state.exercises.push({
       id: uid(),
       name: item.name,
-      notes: '',
+      notes: item.notes || '',
       primaryGroup: item.primaryGroup || '',
       secondaryGroups: [...(item.secondaryGroups || [])],
       sets: [newSet()]
@@ -1715,12 +1723,26 @@ function computeWeekTotals(all, dates) {
   return { primaryTotals, secondaryTotals };
 }
 
-function renderLegend(container, groups) {
+function renderLegend(container, groups, activeGroup = '', chartKey = '') {
   if (!container) return;
   container.innerHTML = '';
+
+  if (!groups.length) return;
+
+  const allItem = document.createElement('button');
+  allItem.type = 'button';
+  allItem.className = `legend-item ${!activeGroup ? 'is-active' : 'is-muted'}`.trim();
+  allItem.dataset.chartFilter = chartKey;
+  allItem.dataset.group = '';
+  allItem.textContent = 'Alles';
+  container.appendChild(allItem);
+
   groups.forEach(group => {
-    const item = document.createElement('div');
-    item.className = 'legend-item';
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `legend-item ${activeGroup === group ? 'is-active' : activeGroup ? 'is-muted' : ''}`.trim();
+    item.dataset.chartFilter = chartKey;
+    item.dataset.group = group;
     item.innerHTML = `<span class="legend-swatch" style="background:${CATEGORY_COLORS[group] || '#b2bec3'}"></span>${group}`;
     container.appendChild(item);
   });
@@ -1775,6 +1797,16 @@ function getCanvasHit(canvas, event) {
     clientX,
     clientY
   };
+}
+
+function setChartGroupFilter(chartKey, group) {
+  if (chartKey === 'primary') {
+    selectedPrimaryChartGroup = selectedPrimaryChartGroup === group ? '' : group;
+  }
+  if (chartKey === 'secondary') {
+    selectedSecondaryChartGroup = selectedSecondaryChartGroup === group ? '' : group;
+  }
+  refreshProgress();
 }
 
 function bindStackedChartHover(canvas, hitboxes, readoutEl) {
@@ -1930,17 +1962,27 @@ function renderWeekCharts(all) {
   const primaryGroups = PRIMARY_GROUPS.filter(group => primaryTotals[group].some(value => value > 0));
   const secondaryGroups = PRIMARY_GROUPS.filter(group => secondaryTotals[group].some(value => value > 0));
 
+  if (selectedPrimaryChartGroup && !primaryGroups.includes(selectedPrimaryChartGroup)) {
+    selectedPrimaryChartGroup = '';
+  }
+  if (selectedSecondaryChartGroup && !secondaryGroups.includes(selectedSecondaryChartGroup)) {
+    selectedSecondaryChartGroup = '';
+  }
+
+  const visiblePrimaryGroups = selectedPrimaryChartGroup ? [selectedPrimaryChartGroup] : primaryGroups;
+  const visibleSecondaryGroups = selectedSecondaryChartGroup ? [selectedSecondaryChartGroup] : secondaryGroups;
+
   drawStackedBarChart(weekPrimaryChart, dates, primaryTotals, {
-    groups: primaryGroups,
+    groups: visiblePrimaryGroups,
     readoutEl: weekPrimaryReadout
   });
   drawStackedBarChart(weekSecondaryChart, dates, secondaryTotals, {
-    groups: secondaryGroups,
+    groups: visibleSecondaryGroups,
     readoutEl: weekSecondaryReadout
   });
 
-  renderLegend(weekPrimaryLegend, primaryGroups);
-  renderLegend(weekSecondaryLegend, secondaryGroups);
+  renderLegend(weekPrimaryLegend, primaryGroups, selectedPrimaryChartGroup, 'primary');
+  renderLegend(weekSecondaryLegend, secondaryGroups, selectedSecondaryChartGroup, 'secondary');
 }
 
 function updateFocusExerciseSelector(all) {
@@ -1980,6 +2022,8 @@ let focusExerciseName = '';
 let chartTooltip = null;
 let selectedRoutineDay = 'monday';
 let selectedDashboardWeek = '';
+let selectedPrimaryChartGroup = '';
+let selectedSecondaryChartGroup = '';
 let progressDraftImage = '';
 
 function ensureActiveExercise() {
@@ -3330,6 +3374,15 @@ if (dashboardWeekInput) {
     setSelectedDashboardWeek(dashboardWeekInput.value);
   });
 }
+
+[weekPrimaryLegend, weekSecondaryLegend].forEach(legend => {
+  if (!legend) return;
+  legend.addEventListener('click', event => {
+    const button = event.target.closest('[data-chart-filter]');
+    if (!button) return;
+    setChartGroupFilter(button.dataset.chartFilter || '', button.dataset.group || '');
+  });
+});
 
 if (dashboardWeekNowBtn) {
   dashboardWeekNowBtn.addEventListener('click', () => {

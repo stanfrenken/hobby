@@ -591,6 +591,11 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   font-family: inherit;
 }
 
+.routine-notes {
+  min-height: 70px;
+  resize: vertical;
+}
+
 .sets-head, .set-row {
   display: grid;
   grid-template-columns: 32px 1fr 1fr 1fr 32px;
@@ -756,10 +761,30 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  appearance: none;
   background: #fff;
   border: 1px solid rgba(0,0,0,0.06);
   border-radius: 999px;
   padding: 4px 8px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+
+.legend-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 107, 102, 0.28);
+}
+
+.legend-item.is-active {
+  background: rgba(15, 107, 102, 0.1);
+  border-color: rgba(15, 107, 102, 0.28);
+  color: #0f6b66;
+}
+
+.legend-item.is-muted {
+  opacity: 0.62;
 }
 
 .legend-swatch {
