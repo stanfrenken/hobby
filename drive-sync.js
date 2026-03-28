@@ -312,7 +312,6 @@ async function saveDriveEnvelope(envelope) {
 async function bootstrapFromDrive() {
   const file = await findDriveFile();
   const localPayload = appApi.getCloudPayload();
-  const localStamp = getPayloadUpdatedAt(localPayload);
 
   if (!file) {
     driveState.fileId = '';
@@ -332,20 +331,13 @@ async function bootstrapFromDrive() {
   const remoteStamp = Number(remoteEnvelope?.updatedAt) || 0;
   const remoteModifiedAt = Date.parse(file.modifiedTime || '') || Date.now();
 
-  if (hasAnyLocalData(localPayload) && localStamp > remoteStamp) {
-    setStatus('Lokale data is nieuwer en wordt naar Google Drive geschreven...');
-    await saveDriveEnvelope(buildEnvelope(localPayload));
-    driveState.bootstrapped = true;
-    setStatus('Lokale data heeft Google Drive bijgewerkt.');
-    return;
-  }
-
   const normalized = normalizeRemoteEnvelope(remoteEnvelope);
   driveState.lastRemoteModifiedAt = remoteModifiedAt;
   driveState.lastRemoteEnvelopeAt = remoteStamp;
+  driveState.lastLocalChangeAt = 0;
   appApi.applyCloudPayload(normalized, { clearSessionProtection: true });
   driveState.bootstrapped = true;
-  setStatus('Google Drive JSON is geladen.');
+  setStatus('Google Drive JSON is geladen en is nu leidend.');
 }
 
 async function flushPendingWrite() {
@@ -394,8 +386,7 @@ async function refreshFromDrive(reason = 'manual') {
 
     const remoteEnvelope = await loadDriveEnvelope(file.id);
     const remoteStamp = Number(remoteEnvelope?.updatedAt) || 0;
-    const localStamp = getPayloadUpdatedAt(appApi.getCloudPayload());
-    if (shouldProtectLocalState() || remoteStamp <= localStamp) {
+    if (shouldProtectLocalState()) {
       driveState.lastRemoteModifiedAt = remoteModifiedAt;
       driveState.lastRemoteEnvelopeAt = Math.max(driveState.lastRemoteEnvelopeAt, remoteStamp);
       return;
@@ -404,6 +395,7 @@ async function refreshFromDrive(reason = 'manual') {
     driveState.fileId = file.id;
     driveState.lastRemoteModifiedAt = remoteModifiedAt;
     driveState.lastRemoteEnvelopeAt = remoteStamp;
+    driveState.lastLocalChangeAt = 0;
     appApi.applyCloudPayload(normalizeRemoteEnvelope(remoteEnvelope), { clearSessionProtection: true });
     setStatus(reason === 'visibility' ? 'Nieuwste Drive-data is ingeladen.' : 'Drive-data bijgewerkt.');
   } catch (error) {
