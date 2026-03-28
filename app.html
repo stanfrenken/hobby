@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260328b" />
+  <link rel="stylesheet" href="styles.css?v=20260328c" />
 </head>
 <body>
   <div class="bg"></div>
@@ -155,22 +155,22 @@
 
           <section class="panel">
             <div class="panel-header">
-              <h2>Cloud Database</h2>
-              <span class="badge">Firestore</span>
+              <h2>Google Drive JSON</h2>
+              <span class="badge">Drive</span>
             </div>
             <div class="sync">
               <label class="control">
-                <span>Firebase config (JSON)</span>
-                <textarea id="dbConfigJson" rows="7" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'></textarea>
+                <span>Google OAuth Client ID</span>
+                <textarea id="dbConfigJson" rows="4" placeholder='{"clientId":"1234567890-abcdefg.apps.googleusercontent.com"}'></textarea>
               </label>
               <div class="control buttons">
-                <button id="dbSaveConfig" class="primary" type="button">Bewaar database</button>
+                <button id="dbSaveConfig" class="primary" type="button">Bewaar Drive-koppeling</button>
                 <button id="dbSignIn" class="ghost" type="button">Login met Google</button>
                 <button id="dbSignOut" class="ghost" type="button">Uitloggen</button>
               </div>
               <p id="dbUser" class="hint">Nog niet ingelogd.</p>
-              <p id="dbStatus" class="hint">Plak je Firebase config om je database te activeren.</p>
-              <p class="hint">Dit is nu de hoofdopslag. Zo blijven telefoon en pc gelijk zonder Google Sheets-sync.</p>
+              <p id="dbStatus" class="hint">Plak je Google OAuth Client ID om je Drive-opslag te activeren.</p>
+              <p class="hint">De app bewaart dan alles in een JSON-bestand in jouw Google Drive appDataFolder.</p>
             </div>
           </section>
 
@@ -321,7 +321,8 @@
     </article>
   </template>
 
-  <script src="app.js?v=20260328b"></script>
-  <script type="module" src="firebase-sync.js?v=20260328b"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="app.js?v=20260328c"></script>
+  <script type="module" src="drive-sync.js?v=20260328c"></script>
 </body>
 </html>

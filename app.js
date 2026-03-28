@@ -219,17 +219,13 @@ function saveRoutines(routines) {
   localStorage.setItem(ROUTINES_KEY, JSON.stringify(normalizeRoutineState(routines)));
 }
 
-function isFirebaseCloudConfigured() {
+function isDriveCloudConfigured() {
   const raw = localStorage.getItem(DB_CONFIG_KEY);
   if (!raw) return false;
   try {
     const parsed = JSON.parse(raw);
-    const config = parsed?.config || {};
-    return !!(parsed?.provider === 'firebase'
-      && config.apiKey
-      && config.authDomain
-      && config.projectId
-      && config.appId);
+    return !!(parsed?.provider === 'drive'
+      && String(parsed?.clientId || '').trim());
   } catch {
     return false;
   }
@@ -2118,8 +2114,8 @@ function loadSyncConfig() {
     syncAutoPullInput.checked = true;
     syncAutoPullInput.disabled = true;
   }
-  updateSyncStatus(isFirebaseCloudConfigured()
-    ? 'Google Sheets-sync staat uit omdat Firestore actief is.'
+  updateSyncStatus(isDriveCloudConfigured()
+    ? 'Google Sheets-sync staat uit omdat Google Drive JSON actief is.'
     : (hasSyncConfig() ? 'Gereed om te syncen.' : 'Nog niet verbonden.'));
 }
 
@@ -2151,7 +2147,7 @@ function updateSyncStatus(message) {
 }
 
 function hasSyncConfig() {
-  if (isFirebaseCloudConfigured()) return false;
+  if (isDriveCloudConfigured()) return false;
   return !!(syncState.url && syncState.sheetId);
 }
 
@@ -2900,7 +2896,7 @@ window.fitnessApp = {
   createEmptyRoutines,
   normalizeRoutineState,
   getCurrentDate: () => state.date,
-  isFirebaseConfigured: isFirebaseCloudConfigured
+  isDriveConfigured: isDriveCloudConfigured
 };
 
 function init() {
