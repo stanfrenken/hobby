@@ -1,5 +1,6 @@
 ﻿const STORAGE_KEY = 'fitnessLog.v1';
 const SYNC_KEY = 'fitnessLog.sync.v1';
+const DB_CONFIG_KEY = 'fitnessLog.dbConfig.v1';
 const EXERCISE_LIBRARY_KEY = 'fitnessLog.exerciseLibrary.v1';
 const ROUTINES_KEY = 'fitnessLog.routines.v1';
 const UI_PAGE_KEY = 'fitnessLog.uiPage.v1';
@@ -218,6 +219,33 @@ function saveRoutines(routines) {
   localStorage.setItem(ROUTINES_KEY, JSON.stringify(normalizeRoutineState(routines)));
 }
 
+function isFirebaseCloudConfigured() {
+  const raw = localStorage.getItem(DB_CONFIG_KEY);
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw);
+    const config = parsed?.config || {};
+    return !!(parsed?.provider === 'firebase'
+      && config.apiKey
+      && config.authDomain
+      && config.projectId
+      && config.appId);
+  } catch {
+    return false;
+  }
+}
+
+function emitCloudChange(scope) {
+  if (window.__fitnessApplyingRemote) return;
+  window.dispatchEvent(new CustomEvent('fitness:data-changed', {
+    detail: {
+      scope,
+      date: state.date,
+      updatedAt: state.updatedAt || Date.now()
+    }
+  }));
+}
+
 function getRoutineDayKeyFromDate(value) {
   const date = parseDate(value) || new Date();
   const match = ROUTINE_DAYS.find(day => day.index === date.getDay());
@@ -358,6 +386,7 @@ function persist() {
   syncState.lastChangedDate = state.date;
   syncState.lastChangedScope = 'day';
   scheduleAutoSync();
+  emitCloudChange('day');
 }
 
 function addExercise() {
@@ -489,6 +518,7 @@ function saveExerciseProfileToLibrary(exercise) {
   library.push(profile);
   library.sort((a, b) => a.name.localeCompare(b.name, 'nl-NL'));
   saveCustomExerciseLibrary(library);
+  emitCloudChange('meta');
   return true;
 }
 
@@ -618,6 +648,7 @@ function persistRoutines(routines, options = {}) {
   if (options.refreshLogbook === true) renderExercises();
   if (options.rerenderRoutine !== false) renderRoutinePage();
   scheduleAutoSync();
+  emitCloudChange('meta');
 }
 
 function setSelectedRoutineDay(dayKey, options = {}) {
@@ -2055,6 +2086,7 @@ function importData(file) {
       renderExercises();
       renderRoutinePage();
       refreshProgress();
+      emitCloudChange('all');
     } catch {
       alert('Kon JSON niet lezen.');
     }
@@ -2078,13 +2110,17 @@ function loadSyncConfig() {
   }
 
   syncState.pullOnLoad = true;
-  syncUrlInput.value = syncState.url;
-  syncSheetIdInput.value = syncState.sheetId;
-  syncTokenInput.value = syncState.token;
-  syncAutoInput.checked = syncState.auto;
-  syncAutoPullInput.checked = true;
-  syncAutoPullInput.disabled = true;
-  updateSyncStatus(hasSyncConfig() ? 'Gereed om te syncen.' : 'Nog niet verbonden.');
+  if (syncUrlInput) syncUrlInput.value = syncState.url;
+  if (syncSheetIdInput) syncSheetIdInput.value = syncState.sheetId;
+  if (syncTokenInput) syncTokenInput.value = syncState.token;
+  if (syncAutoInput) syncAutoInput.checked = syncState.auto;
+  if (syncAutoPullInput) {
+    syncAutoPullInput.checked = true;
+    syncAutoPullInput.disabled = true;
+  }
+  updateSyncStatus(isFirebaseCloudConfigured()
+    ? 'Google Sheets-sync staat uit omdat Firestore actief is.'
+    : (hasSyncConfig() ? 'Gereed om te syncen.' : 'Nog niet verbonden.'));
 }
 
 function normalizeScriptUrl(url) {
@@ -2093,6 +2129,7 @@ function normalizeScriptUrl(url) {
 }
 
 function saveSyncConfig() {
+  if (!syncUrlInput || !syncSheetIdInput || !syncTokenInput || !syncAutoInput) return;
   syncState.url = normalizeScriptUrl(syncUrlInput.value.trim());
   syncState.sheetId = syncSheetIdInput.value.trim();
   syncState.token = syncTokenInput.value.trim();
@@ -2114,6 +2151,7 @@ function updateSyncStatus(message) {
 }
 
 function hasSyncConfig() {
+  if (isFirebaseCloudConfigured()) return false;
   return !!(syncState.url && syncState.sheetId);
 }
 
@@ -2754,32 +2792,42 @@ importInput.addEventListener('change', event => {
   event.target.value = '';
 });
 
-syncUrlInput.addEventListener('input', saveSyncConfig);
-syncSheetIdInput.addEventListener('input', saveSyncConfig);
-syncTokenInput.addEventListener('input', saveSyncConfig);
-syncAutoInput.addEventListener('change', () => {
-  saveSyncConfig();
-  scheduleAutoSync();
-});
-syncAutoPullInput.addEventListener('change', () => {
-  saveSyncConfig();
-  maybeAutoPull('toggle');
-});
+if (syncUrlInput) syncUrlInput.addEventListener('input', saveSyncConfig);
+if (syncSheetIdInput) syncSheetIdInput.addEventListener('input', saveSyncConfig);
+if (syncTokenInput) syncTokenInput.addEventListener('input', saveSyncConfig);
+if (syncAutoInput) {
+  syncAutoInput.addEventListener('change', () => {
+    saveSyncConfig();
+    scheduleAutoSync();
+  });
+}
+if (syncAutoPullInput) {
+  syncAutoPullInput.addEventListener('change', () => {
+    saveSyncConfig();
+    maybeAutoPull('toggle');
+  });
+}
 
-syncNowBtn.addEventListener('click', () => {
-  saveSyncConfig();
-  syncDay();
-});
+if (syncNowBtn) {
+  syncNowBtn.addEventListener('click', () => {
+    saveSyncConfig();
+    syncDay();
+  });
+}
 
-syncAllBtn.addEventListener('click', () => {
-  saveSyncConfig();
-  syncAll();
-});
+if (syncAllBtn) {
+  syncAllBtn.addEventListener('click', () => {
+    saveSyncConfig();
+    syncAll();
+  });
+}
 
-syncPullBtn.addEventListener('click', () => {
-  saveSyncConfig();
-  pullAllFromSheets();
-});
+if (syncPullBtn) {
+  syncPullBtn.addEventListener('click', () => {
+    saveSyncConfig();
+    pullAllFromSheets();
+  });
+}
 
 focusExerciseSelect.addEventListener('change', () => {
   focusExerciseName = focusExerciseSelect.value;
@@ -2795,10 +2843,12 @@ focusExerciseSelect.addEventListener('change', () => {
   renderExerciseFocus(all);
 });
 
-syncTestBtn.addEventListener('click', () => {
-  saveSyncConfig();
-  testSync();
-});
+if (syncTestBtn) {
+  syncTestBtn.addEventListener('click', () => {
+    saveSyncConfig();
+    testSync();
+  });
+}
 
 dateInput.addEventListener('change', () => {
   persist();
@@ -2806,6 +2856,52 @@ dateInput.addEventListener('change', () => {
   renderExercises();
   refreshProgress();
 });
+
+function getCloudPayload() {
+  const all = loadAll();
+  all[state.date] = cloneState();
+  return {
+    days: all,
+    routines: loadRoutines(),
+    customExercises: loadCustomExerciseLibrary()
+  };
+}
+
+function applyCloudPayload(payload, options = {}) {
+  const nextDays = payload?.days && typeof payload.days === 'object' ? payload.days : {};
+  const nextRoutines = payload?.routines && typeof payload.routines === 'object'
+    ? payload.routines
+    : createEmptyRoutines();
+  const nextExercises = Array.isArray(payload?.customExercises) ? payload.customExercises : [];
+
+  window.__fitnessApplyingRemote = true;
+  try {
+    saveAll(nextDays);
+    saveRoutines(nextRoutines);
+    saveCustomExerciseLibrary(nextExercises);
+    if (options.clearSessionProtection !== false) {
+      sessionProtectedDates.clear();
+    }
+    const activeDate = state.date || todayISO();
+    if (dateInput) dateInput.value = activeDate;
+    loadDay(activeDate);
+    renderExercises();
+    renderRoutinePage();
+    refreshProgress();
+  } finally {
+    window.__fitnessApplyingRemote = false;
+  }
+}
+
+window.__fitnessApplyingRemote = false;
+window.fitnessApp = {
+  getCloudPayload,
+  applyCloudPayload,
+  createEmptyRoutines,
+  normalizeRoutineState,
+  getCurrentDate: () => state.date,
+  isFirebaseConfigured: isFirebaseCloudConfigured
+};
 
 function init() {
   loadSyncConfig();

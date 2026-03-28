@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260328a" />
+  <link rel="stylesheet" href="styles.css?v=20260328b" />
 </head>
 <body>
   <div class="bg"></div>
@@ -155,36 +155,22 @@
 
           <section class="panel">
             <div class="panel-header">
-              <h2>Google Sheets Sync</h2>
+              <h2>Cloud Database</h2>
+              <span class="badge">Firestore</span>
             </div>
             <div class="sync">
               <label class="control">
-                <span>Web App URL</span>
-                <input id="syncUrl" type="text" placeholder="https://script.google.com/macros/s/..." />
-              </label>
-              <label class="control">
-                <span>Sheet ID</span>
-                <input id="syncSheetId" type="text" placeholder="1a2B3c4D5e6F..." />
-              </label>
-              <label class="control">
-                <span>Sync token (optioneel)</span>
-                <input id="syncToken" type="password" placeholder="Zelf gekozen token" />
-              </label>
-              <label class="control inline">
-                <input id="syncAuto" type="checkbox" />
-                <span>Auto sync bij wijzigingen</span>
-              </label>
-              <label class="control inline">
-                <input id="syncAutoPull" type="checkbox" />
-                <span>Auto ophalen bij openen</span>
+                <span>Firebase config (JSON)</span>
+                <textarea id="dbConfigJson" rows="7" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'></textarea>
               </label>
               <div class="control buttons">
-                <button id="syncNow" class="primary">Sync nu</button>
-                <button id="syncAll" class="ghost">Sync alles</button>
-                <button id="syncPull" class="ghost">Haal uit Sheets</button>
-                <button id="syncTest" class="ghost">Test verbinding</button>
+                <button id="dbSaveConfig" class="primary" type="button">Bewaar database</button>
+                <button id="dbSignIn" class="ghost" type="button">Login met Google</button>
+                <button id="dbSignOut" class="ghost" type="button">Uitloggen</button>
               </div>
-              <p id="syncStatus" class="hint">Nog niet verbonden.</p>
+              <p id="dbUser" class="hint">Nog niet ingelogd.</p>
+              <p id="dbStatus" class="hint">Plak je Firebase config om je database te activeren.</p>
+              <p class="hint">Dit is nu de hoofdopslag. Zo blijven telefoon en pc gelijk zonder Google Sheets-sync.</p>
             </div>
           </section>
 
@@ -335,6 +321,7 @@
     </article>
   </template>
 
-  <script src="app.js?v=20260328a"></script>
+  <script src="app.js?v=20260328b"></script>
+  <script type="module" src="firebase-sync.js?v=20260328b"></script>
 </body>
 </html>
