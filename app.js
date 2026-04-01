@@ -5,6 +5,7 @@ const EXERCISE_LIBRARY_KEY = 'fitnessLog.exerciseLibrary.v1';
 const ROUTINES_KEY = 'fitnessLog.routines.v1';
 const UI_PAGE_KEY = 'fitnessLog.uiPage.v1';
 const ROUTINE_UI_KEY = 'fitnessLog.routineDay.v1';
+const ROUTINE_OPTION_UI_KEY = 'fitnessLog.routineOption.v1';
 const DASHBOARD_WEEK_KEY = 'fitnessLog.dashboardWeek.v1';
 const PROGRESS_ENTRIES_KEY = 'fitnessLog.progressEntries.v1';
 const VISION_SETTINGS_KEY = 'fitnessLog.visionSettings.v1';
@@ -13,6 +14,7 @@ const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
 const routineSourceDaySelect = document.getElementById('routineSourceDay');
+const routineSourceOptionSelect = document.getElementById('routineSourceOption');
 const pageStoryBtn = document.getElementById('pageStoryBtn');
 const pageLogBtn = document.getElementById('pageLogBtn');
 const pageDashboardBtn = document.getElementById('pageDashboardBtn');
@@ -68,10 +70,15 @@ const visionModelSelect = document.getElementById('visionModelSelect');
 const saveVisionSettingsBtn = document.getElementById('saveVisionSettingsBtn');
 const visionStatus = document.getElementById('visionStatus');
 const routineDayTabs = document.getElementById('routineDayTabs');
+const routineOptionSelect = document.getElementById('routineOptionSelect');
+const routineOptionNameInput = document.getElementById('routineOptionName');
 const routineList = document.getElementById('routineList');
 const routineEmpty = document.getElementById('routineEmpty');
 const addRoutineExerciseBtn = document.getElementById('addRoutineExerciseBtn');
+const addRoutineOptionBtn = document.getElementById('addRoutineOptionBtn');
+const removeRoutineOptionBtn = document.getElementById('removeRoutineOptionBtn');
 const saveRoutineDayBtn = document.getElementById('saveRoutineDayBtn');
+const downloadRoutinesBtn = document.getElementById('downloadRoutinesBtn');
 const routineSaveHint = document.getElementById('routineSaveHint');
 const exportBtn = document.getElementById('exportData');
 const importInput = document.getElementById('importData');
@@ -112,6 +119,28 @@ const ROUTINE_DAYS = [
   { key: 'saturday', label: 'Zaterdag', index: 6 },
   { key: 'sunday', label: 'Zondag', index: 0 }
 ];
+
+function createRoutineOption(dayKey = '', index = 1) {
+  const label = getRoutineDayLabel(dayKey);
+  return {
+    id: uid(),
+    name: dayKey ? `${label} - optie ${index}` : `Optie ${index}`,
+    exercises: []
+  };
+}
+
+function normalizeRoutineExercise(item) {
+  return {
+    id: item?.id || uid(),
+    name: String(item?.name || '').trim(),
+    notes: String(item?.notes || '').trim(),
+    primaryGroup: sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || '',
+    secondaryGroups: normalizeSecondaryGroups(
+      item?.secondaryGroups ?? item?.secondaryGroup ?? item?.secondary,
+      sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || ''
+    )
+  };
+}
 
 const syncState = {
   url: '',
@@ -284,17 +313,28 @@ function normalizeRoutineState(data) {
   if (!data || typeof data !== 'object') return normalized;
 
   ROUTINE_DAYS.forEach(day => {
-    const list = Array.isArray(data[day.key]) ? data[day.key] : [];
-    normalized[day.key] = list.map(item => ({
-      id: item?.id || uid(),
-      name: String(item?.name || '').trim(),
-      notes: String(item?.notes || '').trim(),
-      primaryGroup: sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || '',
-      secondaryGroups: normalizeSecondaryGroups(
-        item?.secondaryGroups ?? item?.secondaryGroup ?? item?.secondary,
-        sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || ''
-      )
-    }));
+    const rawValue = data[day.key];
+    const list = Array.isArray(rawValue) ? rawValue : [];
+    const isOptionShape = list.some(item => Array.isArray(item?.exercises));
+
+    if (isOptionShape) {
+      normalized[day.key] = list.map((option, index) => ({
+        id: option?.id || uid(),
+        name: String(option?.name || '').trim() || createRoutineOption(day.key, index + 1).name,
+        exercises: Array.isArray(option?.exercises)
+          ? option.exercises.map(normalizeRoutineExercise)
+          : []
+      }));
+      return;
+    }
+
+    if (list.length) {
+      normalized[day.key] = [{
+        id: uid(),
+        name: createRoutineOption(day.key, 1).name,
+        exercises: list.map(normalizeRoutineExercise)
+      }];
+    }
   });
 
   return normalized;
@@ -347,6 +387,35 @@ function getRoutineDayLabel(dayKey) {
   return ROUTINE_DAYS.find(day => day.key === dayKey)?.label || 'Dag';
 }
 
+function loadRoutineOptionSelectionMap() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ROUTINE_OPTION_UI_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRoutineOptionSelectionMap(map) {
+  localStorage.setItem(ROUTINE_OPTION_UI_KEY, JSON.stringify(map || {}));
+}
+
+function getStoredRoutineOptionId(dayKey, routines = loadRoutines()) {
+  const options = routines?.[dayKey] || [];
+  if (!options.length) return '';
+  const selectionMap = loadRoutineOptionSelectionMap();
+  const selected = selectionMap?.[dayKey] || '';
+  if (options.some(option => option.id === selected)) return selected;
+  return options[0]?.id || '';
+}
+
+function setStoredRoutineOptionId(dayKey, optionId) {
+  const selectionMap = loadRoutineOptionSelectionMap();
+  if (!optionId) delete selectionMap[dayKey];
+  else selectionMap[dayKey] = optionId;
+  saveRoutineOptionSelectionMap(selectionMap);
+}
+
 function populateRoutineSourceDaySelect() {
   if (!routineSourceDaySelect || routineSourceDaySelect.options.length) return;
   ROUTINE_DAYS.forEach(day => {
@@ -364,8 +433,47 @@ function getSelectedRoutineSourceDay() {
   return getRoutineDayKeyFromDate(state.date || todayISO());
 }
 
+function populateRoutineSourceOptionSelect(routines, dayKey, preferredOptionId = '') {
+  if (!routineSourceOptionSelect) return '';
+  const options = routines?.[dayKey] || [];
+  routineSourceOptionSelect.innerHTML = '';
+
+  if (!options.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Geen vaste optie';
+    routineSourceOptionSelect.appendChild(option);
+    routineSourceOptionSelect.disabled = true;
+    routineSourceOptionSelect.value = '';
+    return '';
+  }
+
+  options.forEach(optionData => {
+    const option = document.createElement('option');
+    option.value = optionData.id;
+    option.textContent = optionData.name || 'Optie';
+    routineSourceOptionSelect.appendChild(option);
+  });
+
+  routineSourceOptionSelect.disabled = false;
+  const selected = options.some(option => option.id === preferredOptionId)
+    ? preferredOptionId
+    : options[0]?.id || '';
+  routineSourceOptionSelect.value = selected;
+  return selected;
+}
+
+function getSelectedRoutineSourceOptionId(routines = loadRoutines(), dayKey = getSelectedRoutineSourceDay()) {
+  const options = routines?.[dayKey] || [];
+  if (!options.length) return '';
+  const selected = routineSourceOptionSelect?.value || '';
+  if (options.some(option => option.id === selected)) return selected;
+  return options[0]?.id || '';
+}
+
 function updateRoutineApplyButton(options = {}) {
   populateRoutineSourceDaySelect();
+  const routines = options.routines || loadRoutines();
   const targetKey = options.syncSelect === true
     ? getRoutineDayKeyFromDate(state.date || todayISO())
     : getSelectedRoutineSourceDay();
@@ -373,9 +481,17 @@ function updateRoutineApplyButton(options = {}) {
   if (routineSourceDaySelect) {
     routineSourceDaySelect.value = targetKey;
   }
+  const selectedOptionId = populateRoutineSourceOptionSelect(
+    routines,
+    targetKey,
+    options.optionId || getSelectedRoutineSourceOptionId(routines, targetKey)
+  );
   if (!addRoutineToDayBtn) return;
   const label = getRoutineDayLabel(targetKey).toLowerCase();
-  addRoutineToDayBtn.textContent = `Voeg vaste oefeningen van ${label} toe`;
+  const optionName = (routines[targetKey] || []).find(option => option.id === selectedOptionId)?.name || '';
+  addRoutineToDayBtn.textContent = optionName
+    ? `Voeg ${optionName} van ${label} toe`
+    : `Voeg vaste oefeningen van ${label} toe`;
 }
 
 function normalizeAllData(data) {
@@ -789,7 +905,8 @@ function saveRoutineDay() {
   const routines = loadRoutines();
   persistRoutines(routines, { refreshLogbook: true, rerenderRoutine: false });
   if (routineSaveHint) {
-    routineSaveHint.textContent = `${getRoutineDayLabel(selectedRoutineDay)} is opgeslagen.`;
+    const savedName = (routines[selectedRoutineDay] || []).find(option => option.id === selectedRoutineOptionId)?.name || 'deze optie';
+    routineSaveHint.textContent = `${savedName} voor ${getRoutineDayLabel(selectedRoutineDay).toLowerCase()} is opgeslagen.`;
   }
   flashButtonLabel(saveRoutineDayBtn, 'Opgeslagen', 1100);
 }
@@ -799,7 +916,36 @@ function setSelectedRoutineDay(dayKey, options = {}) {
   if (!options.skipPersist) {
     localStorage.setItem(ROUTINE_UI_KEY, selectedRoutineDay);
   }
+  const routines = loadRoutines();
+  selectedRoutineOptionId = getStoredRoutineOptionId(selectedRoutineDay, routines);
   renderRoutinePage();
+}
+
+function setSelectedRoutineOption(optionId, options = {}) {
+  selectedRoutineOptionId = optionId || '';
+  setStoredRoutineOptionId(selectedRoutineDay, selectedRoutineOptionId);
+  if (!options.skipRender) renderRoutinePage();
+}
+
+function ensureRoutineOption(routines, dayKey, options = {}) {
+  const dayOptions = routines[dayKey] || (routines[dayKey] = []);
+  let option = dayOptions.find(entry => entry.id === selectedRoutineOptionId);
+
+  if (!option && dayOptions.length) {
+    option = dayOptions[0];
+  }
+
+  if (!option && options.createIfMissing) {
+    option = createRoutineOption(dayKey, dayOptions.length + 1);
+    dayOptions.push(option);
+  }
+
+  if (option) {
+    selectedRoutineOptionId = option.id;
+    setStoredRoutineOptionId(dayKey, option.id);
+  }
+
+  return option || null;
 }
 
 function renderRoutinePage() {
@@ -807,9 +953,6 @@ function renderRoutinePage() {
 
   const routines = loadRoutines();
   const catalog = getExerciseCatalog(getCurrentDataSnapshot());
-  if (routineSaveHint) {
-    routineSaveHint.textContent = `Klik op opslaan om ${getRoutineDayLabel(selectedRoutineDay).toLowerCase()} te bevestigen.`;
-  }
 
   routineDayTabs.innerHTML = '';
   ROUTINE_DAYS.forEach(day => {
@@ -821,9 +964,54 @@ function renderRoutinePage() {
     routineDayTabs.appendChild(button);
   });
 
+  const dayOptions = routines[selectedRoutineDay] || [];
+  selectedRoutineOptionId = getStoredRoutineOptionId(selectedRoutineDay, routines);
+  const currentOption = dayOptions.find(option => option.id === selectedRoutineOptionId) || null;
+
+  if (routineOptionSelect) {
+    routineOptionSelect.innerHTML = '';
+    if (!dayOptions.length) {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = 'Nog geen opties';
+      routineOptionSelect.appendChild(emptyOption);
+      routineOptionSelect.disabled = true;
+    } else {
+      dayOptions.forEach(option => {
+        const optionEl = document.createElement('option');
+        optionEl.value = option.id;
+        optionEl.textContent = option.name || 'Optie';
+        routineOptionSelect.appendChild(optionEl);
+      });
+      routineOptionSelect.disabled = false;
+      routineOptionSelect.value = currentOption?.id || dayOptions[0]?.id || '';
+    }
+  }
+
+  if (routineOptionNameInput) {
+    routineOptionNameInput.disabled = !currentOption;
+    routineOptionNameInput.value = currentOption?.name || '';
+  }
+  if (removeRoutineOptionBtn) {
+    removeRoutineOptionBtn.disabled = !currentOption;
+  }
+
   routineList.innerHTML = '';
-  const items = routines[selectedRoutineDay] || [];
+  const items = currentOption?.exercises || [];
   routineEmpty.style.display = items.length ? 'none' : 'block';
+  if (routineEmpty) {
+    routineEmpty.innerHTML = currentOption
+      ? '<p>Deze optie heeft nog geen vaste oefeningen ingesteld.</p>'
+      : '<p>Voor deze dag heb je nog geen routine-opties ingesteld.</p>';
+  }
+
+  if (routineSaveHint) {
+    if (!currentOption) {
+      routineSaveHint.textContent = `Voeg eerst een routine-optie toe voor ${getRoutineDayLabel(selectedRoutineDay).toLowerCase()}.`;
+    } else {
+      routineSaveHint.textContent = `Klik op opslaan om ${currentOption.name} voor ${getRoutineDayLabel(selectedRoutineDay).toLowerCase()} te bevestigen.`;
+    }
+  }
 
   items.forEach(item => {
     const card = routineTemplate.content.firstElementChild.cloneNode(true);
@@ -850,11 +1038,17 @@ function renderRoutinePage() {
 
     routineList.appendChild(card);
   });
+
+  updateRoutineApplyButton({
+    routines,
+    optionId: getSelectedRoutineSourceDay() === selectedRoutineDay ? getSelectedRoutineSourceOptionId(routines, selectedRoutineDay) : undefined
+  });
 }
 
 function addRoutineExercise() {
   const routines = loadRoutines();
-  routines[selectedRoutineDay].push({
+  const option = ensureRoutineOption(routines, selectedRoutineDay, { createIfMissing: true });
+  option.exercises.push({
     id: uid(),
     name: '',
     notes: '',
@@ -868,18 +1062,67 @@ function addRoutineExercise() {
   });
 }
 
+function addRoutineOption() {
+  const routines = loadRoutines();
+  const nextOption = createRoutineOption(selectedRoutineDay, (routines[selectedRoutineDay] || []).length + 1);
+  routines[selectedRoutineDay].push(nextOption);
+  selectedRoutineOptionId = nextOption.id;
+  setStoredRoutineOptionId(selectedRoutineDay, nextOption.id);
+  persistRoutines(routines);
+  requestAnimationFrame(() => {
+    if (routineOptionNameInput) routineOptionNameInput.focus();
+  });
+}
+
+function removeRoutineOption() {
+  const routines = loadRoutines();
+  const dayOptions = routines[selectedRoutineDay] || [];
+  if (!selectedRoutineOptionId || !dayOptions.some(option => option.id === selectedRoutineOptionId)) return;
+
+  const nextOptions = dayOptions.filter(option => option.id !== selectedRoutineOptionId);
+  routines[selectedRoutineDay] = nextOptions;
+  const fallbackId = nextOptions[0]?.id || '';
+  selectedRoutineOptionId = fallbackId;
+  setStoredRoutineOptionId(selectedRoutineDay, fallbackId);
+  persistRoutines(routines);
+}
+
 function removeRoutineExercise(routineId) {
   const routines = loadRoutines();
-  routines[selectedRoutineDay] = (routines[selectedRoutineDay] || []).filter(item => item.id !== routineId);
+  const option = ensureRoutineOption(routines, selectedRoutineDay);
+  if (!option) return;
+  option.exercises = (option.exercises || []).filter(item => item.id !== routineId);
   persistRoutines(routines);
 }
 
 function handleRoutineInputChange(target) {
   const card = target.closest('.routine-card');
-  if (!card) return;
-
   const routines = loadRoutines();
-  const item = (routines[selectedRoutineDay] || []).find(entry => entry.id === card.dataset.id);
+  const option = ensureRoutineOption(routines, selectedRoutineDay);
+
+  if (target === routineOptionNameInput && option) {
+    option.name = String(target.value || '').trim();
+    if (!option.name) {
+      option.name = createRoutineOption(selectedRoutineDay, 1).name;
+      target.value = option.name;
+    }
+    persistRoutines(routines, { rerenderRoutine: false });
+    if (routineOptionSelect) {
+      const selectedOption = Array.from(routineOptionSelect.options).find(entry => entry.value === option.id);
+      if (selectedOption) selectedOption.textContent = option.name;
+    }
+    if (routineSaveHint) {
+      routineSaveHint.textContent = `Klik op opslaan om ${option.name} voor ${getRoutineDayLabel(selectedRoutineDay).toLowerCase()} te bevestigen.`;
+    }
+    if (routineSourceDaySelect && getSelectedRoutineSourceDay() === selectedRoutineDay) {
+      updateRoutineApplyButton({ routines, optionId: option.id });
+    }
+    return;
+  }
+
+  if (!card || !option) return;
+
+  const item = (option.exercises || []).find(entry => entry.id === card.dataset.id);
   if (!item) return;
 
   const catalog = getExerciseCatalog(getCurrentDataSnapshot());
@@ -919,10 +1162,12 @@ function handleRoutineInputChange(target) {
 function addRoutineExercisesToCurrentDay() {
   const routines = loadRoutines();
   const dayKey = getSelectedRoutineSourceDay();
-  const presets = routines[dayKey] || [];
+  const optionId = getSelectedRoutineSourceOptionId(routines, dayKey);
+  const option = (routines[dayKey] || []).find(entry => entry.id === optionId) || null;
+  const presets = option?.exercises || [];
 
   if (!presets.length) {
-    alert(`Er staan nog geen vaste oefeningen voor ${getRoutineDayLabel(dayKey)}.`);
+    alert(`Er staan nog geen vaste oefeningen klaar voor ${getRoutineDayLabel(dayKey)}.`);
     return;
   }
 
@@ -2021,6 +2266,7 @@ let activeExerciseId = null;
 let focusExerciseName = '';
 let chartTooltip = null;
 let selectedRoutineDay = 'monday';
+let selectedRoutineOptionId = '';
 let selectedDashboardWeek = '';
 let selectedPrimaryChartGroup = '';
 let selectedSecondaryChartGroup = '';
@@ -2709,6 +2955,21 @@ function exportData() {
   URL.revokeObjectURL(link.href);
 }
 
+function exportRoutinesFile() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    routines: loadRoutines()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `vaste-dagen-${todayISO()}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  flashButtonLabel(downloadRoutinesBtn, 'Gedownload', 1100);
+}
+
 function importData(file) {
   const reader = new FileReader();
   reader.onload = () => {
@@ -2876,16 +3137,18 @@ function buildPayloadForAll(all) {
 function buildRoutineRows(routines) {
   const rows = [];
   ROUTINE_DAYS.forEach(day => {
-    (routines?.[day.key] || []).forEach(item => {
-      if (!(item?.name || '').trim()) return;
-      const resolved = resolveExerciseMuscles(item);
-      rows.push([
-        day.key,
-        day.label,
-        item.name.trim(),
-        resolved.primary,
-        resolved.secondaryGroups.join(', ')
-      ]);
+    (routines?.[day.key] || []).forEach(option => {
+      (option?.exercises || []).forEach(item => {
+        if (!(item?.name || '').trim()) return;
+        const resolved = resolveExerciseMuscles(item);
+        rows.push([
+          day.key,
+          day.label,
+          item.name.trim(),
+          resolved.primary,
+          resolved.secondaryGroups.join(', ')
+        ]);
+      });
     });
   });
   return rows;
@@ -2898,9 +3161,13 @@ function buildRoutinesFromSheets(rows) {
     if (!ROUTINE_DAYS.some(day => day.key === dayKey)) return;
     const name = String(row[2] || '').trim();
     if (!name) return;
-    routines[dayKey].push({
+    if (!routines[dayKey].length) {
+      routines[dayKey].push(createRoutineOption(dayKey, 1));
+    }
+    routines[dayKey][0].exercises.push({
       id: uid(),
       name,
+      notes: '',
       primaryGroup: sanitizeMuscleGroup(row[3]) || '',
       secondaryGroups: normalizeSecondaryGroups(row[4], sanitizeMuscleGroup(row[3]) || '')
     });
@@ -3346,7 +3613,10 @@ addExerciseMiniBtn.addEventListener('click', addExercise);
 addExerciseEmptyBtn.addEventListener('click', addExercise);
 if (addRoutineToDayBtn) addRoutineToDayBtn.addEventListener('click', addRoutineExercisesToCurrentDay);
 if (addRoutineExerciseBtn) addRoutineExerciseBtn.addEventListener('click', addRoutineExercise);
+if (addRoutineOptionBtn) addRoutineOptionBtn.addEventListener('click', addRoutineOption);
+if (removeRoutineOptionBtn) removeRoutineOptionBtn.addEventListener('click', removeRoutineOption);
 if (saveRoutineDayBtn) saveRoutineDayBtn.addEventListener('click', saveRoutineDay);
+if (downloadRoutinesBtn) downloadRoutinesBtn.addEventListener('click', exportRoutinesFile);
 
 saveDayBtn.addEventListener('click', () => {
   persist();
@@ -3365,6 +3635,12 @@ bodyweightInput.addEventListener('input', () => {
 
 if (routineSourceDaySelect) {
   routineSourceDaySelect.addEventListener('change', () => {
+    updateRoutineApplyButton();
+  });
+}
+
+if (routineSourceOptionSelect) {
+  routineSourceOptionSelect.addEventListener('change', () => {
     updateRoutineApplyButton();
   });
 }
@@ -3436,6 +3712,17 @@ if (routineDayTabs) {
     if (!button) return;
     setSelectedRoutineDay(button.dataset.day);
   });
+}
+
+if (routineOptionSelect) {
+  routineOptionSelect.addEventListener('change', () => {
+    setSelectedRoutineOption(routineOptionSelect.value);
+  });
+}
+
+if (routineOptionNameInput) {
+  routineOptionNameInput.addEventListener('input', event => handleRoutineInputChange(event.target));
+  routineOptionNameInput.addEventListener('change', event => handleRoutineInputChange(event.target));
 }
 
 if (routineList) {

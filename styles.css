@@ -565,6 +565,14 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   gap: 14px;
 }
 
+.routine-option-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 14px 0 10px;
+}
+
 .routine-card {
   display: grid;
   gap: 12px;
@@ -995,6 +1003,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .exercise-name-row { grid-template-columns: 1fr; }
   .quick-grid { grid-template-columns: 1fr 1fr; }
   .routine-head { grid-template-columns: 1fr; }
+  .routine-option-bar { grid-template-columns: 1fr; }
   .secondary-picker { padding: 8px; }
   .progress-controls { grid-template-columns: 1fr; }
   .progress-ai-card { grid-template-columns: 1fr; }
