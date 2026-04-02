@@ -1510,12 +1510,37 @@ function collectExerciseNames(all) {
   return Array.from(names).sort((a, b) => a.localeCompare(b, 'nl-NL'));
 }
 
+function formatFocusSetsDetail(sets) {
+  if (!sets || !sets.length) return '-';
+  return sets
+    .map((set, index) => {
+      const reps = Number(set.reps);
+      const weight = Number(set.weight);
+      const hasReps = Number.isFinite(reps) && set.reps !== '';
+      const hasWeight = Number.isFinite(weight) && set.weight !== '';
+      if (hasReps && hasWeight) return `S${index + 1} ${reps}x${formatNumber(weight)} kg`;
+      if (hasReps) return `S${index + 1} ${reps} reps`;
+      if (hasWeight) return `S${index + 1} ${formatNumber(weight)} kg`;
+      return `S${index + 1} -`;
+    })
+    .join(', ');
+}
+
 function formatMetricValue(point) {
-  if (!point) return '-';
-  const date = formatShortDate(point.date);
-  const volume = formatNumber(point.volume);
-  const best = point.best || '-';
-  return `${date} • Vol ${volume} • ${best}`;
+  if (!point) {
+    return {
+      date: '-',
+      bullets: ['Totaal volume: -', 'Sets: -']
+    };
+  }
+
+  return {
+    date: formatShortDate(point.date),
+    bullets: [
+      `Totaal volume: ${formatNumber(point.volume)} kg`,
+      `Sets: ${point.setsDetail || '-'}`
+    ]
+  };
 }
 
 
@@ -1533,10 +1558,10 @@ function getPointAtOrBefore(points, targetDate) {
 
 function buildMetrics(points) {
   const metrics = [
-    { label: 'Start', value: '-' },
-    { label: 'Vorige week', value: '-' },
-    { label: 'Vorige sessie', value: '-' },
-    { label: 'Laatste', value: '-' }
+    { label: 'Start', value: '-', bullets: ['Totaal volume: -', 'Sets: -'] },
+    { label: 'Vorige week', value: '-', bullets: ['Totaal volume: -', 'Sets: -'] },
+    { label: 'Vorige sessie', value: '-', bullets: ['Totaal volume: -', 'Sets: -'] },
+    { label: 'Laatste', value: '-', bullets: ['Totaal volume: -', 'Sets: -'] }
   ];
 
   if (!points.length) return metrics;
@@ -1549,10 +1574,17 @@ function buildMetrics(points) {
   const weekAgoTarget = lastDate ? new Date(lastDate.getTime() - 7 * 24 * 60 * 60 * 1000) : null;
   const weekAgo = weekAgoTarget ? getPointAtOrBefore(sorted, weekAgoTarget) : null;
 
-  metrics[0].value = formatMetricValue(first);
-  metrics[1].value = formatMetricValue(weekAgo);
-  metrics[2].value = formatMetricValue(prev);
-  metrics[3].value = formatMetricValue(last);
+  const nextValues = [
+    formatMetricValue(first),
+    formatMetricValue(weekAgo),
+    formatMetricValue(prev),
+    formatMetricValue(last)
+  ];
+
+  nextValues.forEach((entry, index) => {
+    metrics[index].value = entry.date;
+    metrics[index].bullets = entry.bullets;
+  });
   return metrics;
 }
 
@@ -1602,7 +1634,10 @@ function renderMetrics(container, metrics) {
   metrics.forEach(metric => {
     const item = document.createElement('div');
     item.className = 'metric';
-    item.innerHTML = `<span class="label">${metric.label}</span><span class="value">${metric.value}</span>`;
+    const bullets = Array.isArray(metric.bullets)
+      ? `<ul class="metric-bullets">${metric.bullets.map(entry => `<li>${entry}</li>`).join('')}</ul>`
+      : '';
+    item.innerHTML = `<span class="label">${metric.label}</span><span class="value">${metric.value}</span>${bullets}`;
     container.appendChild(item);
   });
 }
@@ -2317,13 +2352,14 @@ function buildExerciseProgress(name, all) {
       const bestWeight = best ? Number(best.weight) || 0 : 0;
       const bestReps = best ? Number(best.reps) || 0 : 0;
       const setsLabel = formatSetsSummary(sets);
+      const setsDetail = formatFocusSetsDetail(sets);
 
-      points.push({ date, volume, best: bestStr, bestWeight, bestReps, setsLabel });
+      points.push({ date, volume, best: bestStr, bestWeight, bestReps, setsLabel, setsDetail });
       rows.push({
         date,
         volume,
         best: bestStr,
-        detail: `${formatNumber(volume)} - ${bestStr} • ${sets.length} sets`
+        setsDetail
       });
     });
 
@@ -2390,8 +2426,13 @@ function renderProgressTable(rows, container, emptyMessage) {
   rows.forEach(row => {
     const el = document.createElement('div');
     el.className = 'progress-row';
-    const detail = row.detail || `${formatNumber(row.volume)} - ${row.best}`;
-    el.innerHTML = `<span>${formatShortDate(row.date)}</span><span>${detail}</span>`;
+    el.innerHTML = `
+      <div class="progress-row-head">${formatShortDate(row.date)}</div>
+      <ul class="progress-row-list">
+        <li>Totaal volume: ${formatNumber(row.volume)} kg</li>
+        <li>Sets: ${row.setsDetail || '-'}</li>
+      </ul>
+    `;
     container.appendChild(el);
   });
 }
@@ -2877,25 +2918,62 @@ function drawChart(canvas, points, options = {}) {
     return;
   }
 
-  const padding = 24;
-  const maxValue = Math.max(...points.map(p => p.volume), 10);
+  const paddingLeft = 64;
+  const paddingRight = 16;
+  const paddingTop = 18;
+  const paddingBottom = 42;
+  const chartWidth = w - paddingLeft - paddingRight;
+  const chartHeight = h - paddingTop - paddingBottom;
+  const maxValue = getNiceAxisMax(Math.max(...points.map(p => p.volume), 10), 4);
   const minValue = 0;
+  const ticks = 4;
+  const xStep = chartWidth / (points.length - 1 || 1);
 
-  const xStep = (w - padding * 2) / (points.length - 1 || 1);
-
-  ctx.strokeStyle = 'rgba(26,26,26,0.12)';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(26,26,26,0.14)';
+  ctx.lineWidth = 1.25;
   ctx.beginPath();
-  ctx.moveTo(padding, h - padding);
-  ctx.lineTo(w - padding, h - padding);
+  ctx.moveTo(paddingLeft, paddingTop);
+  ctx.lineTo(paddingLeft, h - paddingBottom);
+  ctx.lineTo(w - paddingRight, h - paddingBottom);
   ctx.stroke();
+
+  ctx.save();
+  ctx.translate(18, h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = '700 12px Space Grotesk';
+  ctx.textAlign = 'center';
+  ctx.fillText('Totaal volume (kg)', 0, 0);
+  ctx.restore();
+
+  ctx.fillStyle = '#6a5e54';
+  ctx.font = '700 11px Space Grotesk';
+  ctx.textAlign = 'center';
+  ctx.fillText('Datum', paddingLeft + chartWidth / 2, h - 8);
+
+  for (let i = 0; i <= ticks; i += 1) {
+    const value = (maxValue / ticks) * i;
+    const y = h - paddingBottom - ((value - minValue) / (maxValue - minValue)) * chartHeight;
+    ctx.strokeStyle = 'rgba(26,26,26,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(w - paddingRight, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = '600 11px Space Grotesk';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${formatNumber(value)} kg`, paddingLeft - 8, y);
+  }
 
   ctx.strokeStyle = lineColor;
   ctx.lineWidth = 2;
   ctx.beginPath();
   points.forEach((point, index) => {
-    const x = padding + index * xStep;
-    const y = h - padding - ((point.volume - minValue) / (maxValue - minValue)) * (h - padding * 2);
+    const x = paddingLeft + index * xStep;
+    const y = h - paddingBottom - ((point.volume - minValue) / (maxValue - minValue)) * chartHeight;
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
@@ -2903,11 +2981,23 @@ function drawChart(canvas, points, options = {}) {
 
   ctx.fillStyle = dotColor;
   points.forEach((point, index) => {
-    const x = padding + index * xStep;
-    const y = h - padding - ((point.volume - minValue) / (maxValue - minValue)) * (h - padding * 2);
+    const x = paddingLeft + index * xStep;
+    const y = h - paddingBottom - ((point.volume - minValue) / (maxValue - minValue)) * chartHeight;
     ctx.beginPath();
     ctx.arc(x, y, 3.5, 0, Math.PI * 2);
     ctx.fill();
+  });
+
+  const labelStep = Math.max(1, Math.ceil(points.length / 5));
+  points.forEach((point, index) => {
+    const isVisible = index === 0 || index === points.length - 1 || index % labelStep === 0;
+    if (!isVisible) return;
+    const x = paddingLeft + index * xStep;
+    ctx.fillStyle = '#6a5e54';
+    ctx.font = '11px Space Grotesk';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(formatAxisDate(point.date), x, h - 22);
   });
 
   if (annotations.length) {
@@ -2916,8 +3006,8 @@ function drawChart(canvas, points, options = {}) {
       const idx = annotation.index;
       if (idx < 0 || idx >= points.length) return;
       const point = points[idx];
-      const x = padding + idx * xStep;
-      const y = h - padding - ((point.volume - minValue) / (maxValue - minValue)) * (h - padding * 2);
+      const x = paddingLeft + idx * xStep;
+      const y = h - paddingBottom - ((point.volume - minValue) / (maxValue - minValue)) * chartHeight;
       ctx.fillStyle = annotation.color || '#1a1a1a';
       ctx.fillText(annotation.label, x + 6, y - 8);
       ctx.beginPath();

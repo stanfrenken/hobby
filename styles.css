@@ -825,6 +825,15 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   margin-top: 4px;
 }
 
+.metric-bullets {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .metric .sub {
   display: block;
   margin-top: 4px;
@@ -866,12 +875,25 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 }
 
 .progress-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  gap: 8px;
   background: #fff;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid rgba(0,0,0,0.06);
+}
+
+.progress-row-head {
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.progress-row-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
 }
 
 .day-exercises {
