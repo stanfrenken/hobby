@@ -1530,14 +1530,14 @@ function formatMetricValue(point) {
   if (!point) {
     return {
       date: '-',
-      bullets: ['Totaal volume: -', 'Sets: -']
+      bullets: ['Totaal volume: <strong>-</strong>', 'Sets: -']
     };
   }
 
   return {
     date: formatShortDate(point.date),
     bullets: [
-      `Totaal volume: ${formatNumber(point.volume)} kg`,
+      `Totaal volume: <strong>${formatNumber(point.volume)} kg</strong>`,
       `Sets: ${point.setsDetail || '-'}`
     ]
   };
@@ -1645,42 +1645,7 @@ function renderMetrics(container, metrics) {
 function renderStartNow(container, points, currentExercise) {
   if (!container) return;
   container.innerHTML = '';
-
-  const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
-  const first = sorted[0];
-  const currentSets = currentExercise?.sets || [];
-  const currentBest = findBestSet(currentSets);
-  const currentBestStr = currentBest ? `${formatNumber(currentBest.weight)} x ${currentBest.reps}` : '-';
-  const currentSetsLabel = formatSetsSummary(currentSets);
-
-  const currentDate = state.date;
-  const previousSessions = sorted.filter(point => point.date < currentDate);
-  const last = previousSessions.length ? previousSessions[previousSessions.length - 1] : sorted[sorted.length - 1];
-
-  const cards = [
-    {
-      label: 'Startgewicht',
-      value: first ? first.best : '-',
-      sub: first ? first.setsLabel : '-'
-    },
-    {
-      label: 'Laatste keer',
-      value: last ? last.best : '-',
-      sub: last ? last.setsLabel : '-'
-    },
-    {
-      label: 'Huidig',
-      value: currentBestStr,
-      sub: currentSetsLabel
-    }
-  ];
-
-  cards.forEach(card => {
-    const item = document.createElement('div');
-    item.className = 'metric';
-    item.innerHTML = `<span class="label">${card.label}</span><span class="value">${card.value}</span><span class="sub">${card.sub}</span>`;
-    container.appendChild(item);
-  });
+  container.style.display = 'none';
 }
 
 const PRIMARY_GROUPS = [
@@ -2429,7 +2394,7 @@ function renderProgressTable(rows, container, emptyMessage) {
     el.innerHTML = `
       <div class="progress-row-head">${formatShortDate(row.date)}</div>
       <ul class="progress-row-list">
-        <li>Totaal volume: ${formatNumber(row.volume)} kg</li>
+        <li>Totaal volume: <strong>${formatNumber(row.volume)} kg</strong></li>
         <li>Sets: ${row.setsDetail || '-'}</li>
       </ul>
     `;
