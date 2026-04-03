@@ -908,6 +908,14 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   padding: 12px 14px;
   display: grid;
   gap: 8px;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.day-exercise:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 107, 102, 0.22);
+  box-shadow: 0 8px 20px rgba(15, 107, 102, 0.08);
 }
 
 .day-exercise-head {
@@ -925,6 +933,52 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .day-exercise-volume {
   font-weight: 700;
   color: var(--accent);
+}
+
+.day-exercise-muscles {
+  display: grid;
+  gap: 4px;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.day-exercise-muscles .label {
+  color: #1a1a1a;
+  font-weight: 700;
+}
+
+.day-exercise-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+  box-shadow: none;
+}
+
+.day-exercise-link:hover {
+  box-shadow: none;
+}
+
+.exercise-card.jump-highlight {
+  animation: jumpGlow 1.5s ease;
+}
+
+@keyframes jumpGlow {
+  0% {
+    border-color: rgba(194, 85, 45, 0.15);
+    box-shadow: 0 0 0 rgba(194, 85, 45, 0);
+  }
+  35% {
+    border-color: rgba(194, 85, 45, 0.75);
+    box-shadow: 0 16px 36px rgba(194, 85, 45, 0.2);
+  }
+  100% {
+    border-color: rgba(194, 85, 45, 0.15);
+    box-shadow: 0 0 0 rgba(194, 85, 45, 0);
+  }
 }
 
 .set-tags {

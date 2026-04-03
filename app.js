@@ -1274,6 +1274,11 @@ function formatSetsSummary(sets) {
     .join(', ');
 }
 
+function formatMuscleList(groups) {
+  if (!groups || !groups.length) return '-';
+  return groups.join(', ');
+}
+
 function renderDayExerciseSummary() {
   if (!dayExerciseSummary) return;
 
@@ -1288,13 +1293,15 @@ function renderDayExerciseSummary() {
   state.exercises.forEach(exercise => {
     const card = document.createElement('div');
     card.className = 'day-exercise';
+    card.dataset.id = exercise.id;
 
     const name = (exercise.name || '').trim() || 'Oefening';
     const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set), 0);
+    const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
 
     const head = document.createElement('div');
     head.className = 'day-exercise-head';
-    head.innerHTML = `<span class="day-exercise-name">${name}</span><span class="day-exercise-volume">${formatNumber(volume)}</span>`;
+    head.innerHTML = `<span class="day-exercise-name">${name}</span><span class="day-exercise-volume">${formatNumber(volume)} kg</span>`;
 
     const tags = document.createElement('div');
     tags.className = 'set-tags';
@@ -1314,8 +1321,23 @@ function renderDayExerciseSummary() {
       });
     }
 
+    const muscles = document.createElement('div');
+    muscles.className = 'day-exercise-muscles';
+    muscles.innerHTML = `
+      <div><span class="label">Primary:</span> <span>${primary || '-'}</span></div>
+      <div><span class="label">Secondary:</span> <span>${formatMuscleList(secondaryGroups)}</span></div>
+    `;
+
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'day-exercise-link';
+    link.dataset.id = exercise.id;
+    link.textContent = 'Ga naar oefening';
+
     card.appendChild(head);
     card.appendChild(tags);
+    card.appendChild(muscles);
+    card.appendChild(link);
     dayExerciseSummary.appendChild(card);
   });
 }
@@ -2285,7 +2307,13 @@ function ensureActiveExercise() {
 }
 
 function setActiveExercise(exerciseId) {
-  if (!exerciseId || exerciseId === activeExerciseId) return;
+  if (!exerciseId) return;
+  if (exerciseId === activeExerciseId) {
+    const all = loadAll();
+    all[state.date] = cloneState();
+    renderExerciseFocus(all);
+    return;
+  }
   activeExerciseId = exerciseId;
   const activeExercise = state.exercises.find(ex => ex.id === exerciseId);
   if (activeExercise?.name?.trim()) {
@@ -2298,6 +2326,18 @@ function setActiveExercise(exerciseId) {
   const all = loadAll();
   all[state.date] = cloneState();
   renderExerciseFocus(all);
+}
+
+function jumpToExerciseInLogbook(exerciseId) {
+  if (!exerciseId) return;
+  setActiveExercise(exerciseId);
+  requestAnimationFrame(() => {
+    const card = exerciseList?.querySelector(`.exercise-card[data-id="${exerciseId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    card.classList.add('jump-highlight');
+    window.setTimeout(() => card.classList.remove('jump-highlight'), 1600);
+  });
 }
 
 function buildExerciseProgress(name, all) {
@@ -3788,6 +3828,16 @@ if (routineList) {
       const card = event.target.closest('.routine-card');
       if (card) removeRoutineExercise(card.dataset.id);
     }
+  });
+}
+
+if (dayExerciseSummary) {
+  dayExerciseSummary.addEventListener('click', event => {
+    const trigger = event.target.closest('.day-exercise-link, .day-exercise');
+    if (!trigger) return;
+    const targetId = trigger.dataset.id || trigger.closest('.day-exercise')?.dataset.id || '';
+    if (!targetId) return;
+    jumpToExerciseInLogbook(targetId);
   });
 }
 
