@@ -537,6 +537,36 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 
 .exercise-stats .value { font-weight: 700; font-size: 1.05rem; }
 
+.exercise-last-session {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(15, 107, 102, 0.08);
+  border: 1px solid rgba(15, 107, 102, 0.14);
+}
+
+.exercise-last-session .label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.exercise-last-session .date {
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.exercise-last-session .sets {
+  font-size: 0.9rem;
+  color: #1a1a1a;
+}
+
+.exercise-last-session .sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .quick-builder {
   display: grid;
   gap: 10px;

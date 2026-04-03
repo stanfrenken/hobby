@@ -806,6 +806,8 @@ function renderExercises() {
   exerciseList.innerHTML = '';
   ensureActiveExercise();
   const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+  const all = loadAll();
+  all[state.date] = cloneState();
 
   if (!state.exercises.length) {
     emptyState.style.display = 'block';
@@ -823,6 +825,7 @@ function renderExercises() {
     const notesInput = card.querySelector('.exercise-notes');
     const primarySelect = card.querySelector('.exercise-primary');
     const secondaryPicker = card.querySelector('.exercise-secondary-picker');
+    const previousSessionEl = card.querySelector('.exercise-last-session');
     nameInput.value = exercise.name;
     populateExerciseSelect(selectInput, catalog, exercise.name);
     notesInput.value = exercise.notes;
@@ -835,6 +838,23 @@ function renderExercises() {
       exercise.primaryGroup || displayProfile?.primary || '',
       'exercise-secondary'
     );
+
+    const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
+    if (previousSessionEl) {
+      if (previousSession) {
+        previousSessionEl.innerHTML = `
+          <span class="label">Laatste keer</span>
+          <span class="date">${formatLongDate(previousSession.date)}</span>
+          <span class="sets">${formatFocusSetsDetail(previousSession.sets)}</span>
+          <span class="sub">Totaal volume: ${formatNumber(previousSession.volume)} kg</span>
+        `;
+      } else {
+        previousSessionEl.innerHTML = `
+          <span class="label">Laatste keer</span>
+          <span class="sub">Nog geen eerdere sessie gevonden.</span>
+        `;
+      }
+    }
 
     const setsBody = card.querySelector('.sets-body');
     exercise.sets.forEach((set, index) => {
@@ -1546,6 +1566,29 @@ function formatFocusSetsDetail(sets) {
       return `S${index + 1} -`;
     })
     .join(', ');
+}
+
+function findLatestPreviousExerciseSession(name, currentDate, all = loadAll()) {
+  const normalizedName = normalizeExerciseName(name);
+  if (!normalizedName) return null;
+
+  let latest = null;
+
+  Object.entries(all)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([date, day]) => {
+      if (!date || date >= currentDate) return;
+      const matches = (day.exercises || []).filter(ex => normalizeExerciseName(ex.name) === normalizedName);
+      if (!matches.length) return;
+      const sets = matches.flatMap(ex => ex.sets || []);
+      latest = {
+        date,
+        sets,
+        volume: sets.reduce((sum, set) => sum + setVolume(set), 0)
+      };
+    });
+
+  return latest;
 }
 
 function formatMetricValue(point) {
