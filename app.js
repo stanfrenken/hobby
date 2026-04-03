@@ -1318,6 +1318,7 @@ function renderDayExerciseSummary() {
     const name = (exercise.name || '').trim() || 'Oefening';
     const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set), 0);
     const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
+    const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date);
 
     const head = document.createElement('div');
     head.className = 'day-exercise-head';
@@ -1346,6 +1347,8 @@ function renderDayExerciseSummary() {
     muscles.innerHTML = `
       <div><span class="label">Primary:</span> <span>${primary || '-'}</span></div>
       <div><span class="label">Secondary:</span> <span>${formatMuscleList(secondaryGroups)}</span></div>
+      <div><span class="label">Laatste keer:</span> <span>${previousSession ? formatShortDate(previousSession.date) : '-'}</span></div>
+      <div><span class="label">Vorige sets:</span> <span>${previousSession ? formatFocusSetsDetail(previousSession.sets) : 'Nog geen eerdere sessie'}</span></div>
     `;
 
     const link = document.createElement('button');

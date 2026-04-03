@@ -970,6 +970,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   gap: 4px;
   font-size: 0.84rem;
   color: var(--muted);
+  line-height: 1.45;
 }
 
 .day-exercise-muscles .label {
