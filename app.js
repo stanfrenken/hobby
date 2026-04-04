@@ -511,11 +511,15 @@ function normalizeAllData(data) {
       notes: ex?.notes || '',
       primaryGroup: sanitizeMuscleGroup(ex?.primaryGroup) || '',
       secondaryGroups: normalizeSecondaryGroups(ex?.secondaryGroups ?? ex?.secondaryGroup, sanitizeMuscleGroup(ex?.primaryGroup) || ''),
+      splitWeightMode: !!ex?.splitWeightMode || (Array.isArray(ex?.sets) && ex.sets.some(set => (set?.weightMode === 'split') || (set?.leftWeight ?? '') !== '' || (set?.rightWeight ?? '') !== '')),
       sets: Array.isArray(ex?.sets)
         ? ex.sets.map(set => ({
           id: set?.id || uid(),
           reps: set?.reps ?? '',
           weight: set?.weight ?? '',
+          leftWeight: set?.leftWeight ?? '',
+          rightWeight: set?.rightWeight ?? '',
+          weightMode: set?.weightMode || (((set?.leftWeight ?? '') !== '' || (set?.rightWeight ?? '') !== '') ? 'split' : 'single'),
           rpe: set?.rpe ?? '',
           done: !!set?.done
         }))
@@ -567,10 +571,14 @@ function loadDay(date) {
     notes: ex.notes || '',
     primaryGroup: sanitizeMuscleGroup(ex.primaryGroup) || '',
     secondaryGroups: normalizeSecondaryGroups(ex.secondaryGroups ?? ex.secondaryGroup, sanitizeMuscleGroup(ex.primaryGroup) || ''),
+    splitWeightMode: !!ex.splitWeightMode || (Array.isArray(ex.sets) && ex.sets.some(set => (set?.weightMode === 'split') || (set?.leftWeight ?? '') !== '' || (set?.rightWeight ?? '') !== '')),
     sets: (ex.sets || []).map(set => ({
       id: set.id || uid(),
       reps: set.reps ?? '',
       weight: set.weight ?? '',
+      leftWeight: set.leftWeight ?? '',
+      rightWeight: set.rightWeight ?? '',
+      weightMode: set.weightMode || (((set.leftWeight ?? '') !== '' || (set.rightWeight ?? '') !== '') ? 'split' : 'single'),
       rpe: set.rpe ?? '',
       done: !!set.done
     }))
@@ -603,6 +611,7 @@ function addExercise() {
     notes: '',
     primaryGroup: '',
     secondaryGroups: [],
+    splitWeightMode: false,
     sets: [newSet()]
   };
   state.exercises.push(exercise);
@@ -612,10 +621,17 @@ function addExercise() {
 }
 
 function newSet(seed) {
+  const inferredMode = seed?.weightMode === 'split'
+    || (seed?.weightMode !== 'single' && ((seed?.leftWeight ?? '') !== '' || (seed?.rightWeight ?? '') !== ''))
+    ? 'split'
+    : 'single';
   return {
     id: uid(),
     reps: seed?.reps ?? '',
     weight: seed?.weight ?? '',
+    leftWeight: seed?.leftWeight ?? '',
+    rightWeight: seed?.rightWeight ?? '',
+    weightMode: inferredMode,
     rpe: seed?.rpe ?? '',
     done: false
   };
@@ -764,10 +780,81 @@ function saveExerciseProfileToLibrary(exercise) {
   return true;
 }
 
+function hasInputValue(value) {
+  return value !== '' && value !== null && value !== undefined;
+}
+
+function getNumericField(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && `${value}` !== '' ? numeric : null;
+}
+
+function usesSplitWeight(set, exerciseOrMode = null) {
+  if (typeof exerciseOrMode === 'boolean') return exerciseOrMode;
+  if (typeof exerciseOrMode === 'string') return exerciseOrMode === 'split';
+  if (exerciseOrMode && typeof exerciseOrMode === 'object' && 'splitWeightMode' in exerciseOrMode) {
+    return !!exerciseOrMode.splitWeightMode;
+  }
+  if (set?.weightMode) return set.weightMode === 'split';
+  return hasInputValue(set?.leftWeight) || hasInputValue(set?.rightWeight);
+}
+
+function getSetWeightData(set, exerciseOrMode = null) {
+  const splitMode = usesSplitWeight(set, exerciseOrMode);
+  if (splitMode) {
+    const left = getNumericField(set?.leftWeight);
+    const right = getNumericField(set?.rightWeight);
+    return {
+      splitMode: true,
+      left,
+      right,
+      total: (left || 0) + (right || 0),
+      hasWeight: left !== null || right !== null
+    };
+  }
+
+  const weight = getNumericField(set?.weight);
+  return {
+    splitMode: false,
+    weight,
+    total: weight || 0,
+    hasWeight: weight !== null
+  };
+}
+
+function formatSetLoad(set, exerciseOrMode = null, includeUnit = false) {
+  const weightData = getSetWeightData(set, exerciseOrMode);
+  if (!weightData.hasWeight) return '';
+
+  let label = '';
+  if (weightData.splitMode) {
+    const left = weightData.left !== null ? `${formatNumber(weightData.left)}L` : '-L';
+    const right = weightData.right !== null ? `${formatNumber(weightData.right)}R` : '-R';
+    label = `${left}/${right}`;
+  } else {
+    label = formatNumber(weightData.weight);
+  }
+
+  return includeUnit ? `${label} kg` : label;
+}
+
+function syncExerciseSplitMode(exercise, splitMode) {
+  exercise.splitWeightMode = !!splitMode;
+  (exercise.sets || []).forEach(set => {
+    set.weightMode = exercise.splitWeightMode ? 'split' : 'single';
+    if (exercise.splitWeightMode && hasInputValue(set.weight)) {
+      if (!hasInputValue(set.leftWeight)) set.leftWeight = set.weight;
+      if (!hasInputValue(set.rightWeight)) set.rightWeight = set.weight;
+    }
+  });
+}
+
 function isBlankSet(set) {
   return !set
     || ((set.reps ?? '') === ''
       && (set.weight ?? '') === ''
+      && (set.leftWeight ?? '') === ''
+      && (set.rightWeight ?? '') === ''
       && (set.rpe ?? '') === ''
       && !set.done);
 }
@@ -779,19 +866,33 @@ function applyQuickSetBuilder(exId, card) {
   const count = Number(card.querySelector('.quick-set-count')?.value || 0);
   const reps = card.querySelector('.quick-set-reps')?.value ?? '';
   const weight = card.querySelector('.quick-set-weight')?.value ?? '';
+  const leftWeight = card.querySelector('.quick-set-left-weight')?.value ?? '';
+  const rightWeight = card.querySelector('.quick-set-right-weight')?.value ?? '';
   const rpe = card.querySelector('.quick-set-rpe')?.value ?? '';
+  const splitMode = !!exercise.splitWeightMode;
 
   if (!Number.isFinite(count) || count < 1) {
     alert('Vul eerst in hoeveel sets je wilt maken.');
     return;
   }
 
-  if (`${reps}` === '' && `${weight}` === '' && `${rpe}` === '') {
+  const hasWeightInput = splitMode
+    ? `${leftWeight}` !== '' || `${rightWeight}` !== ''
+    : `${weight}` !== '';
+
+  if (`${reps}` === '' && !hasWeightInput && `${rpe}` === '') {
     alert('Vul minstens reps, gewicht of RPE in voor je sets.');
     return;
   }
 
-  const generatedSets = Array.from({ length: count }, () => newSet({ reps, weight, rpe }));
+  const generatedSets = Array.from({ length: count }, () => newSet({
+    reps,
+    weight,
+    leftWeight,
+    rightWeight,
+    weightMode: splitMode ? 'split' : 'single',
+    rpe
+  }));
   const replaceBlankStarter = exercise.sets.length === 1 && isBlankSet(exercise.sets[0]);
 
   exercise.sets = replaceBlankStarter
@@ -819,6 +920,7 @@ function renderExercises() {
     const card = exerciseTemplate.content.firstElementChild.cloneNode(true);
     card.dataset.id = exercise.id;
     if (exercise.id === activeExerciseId) card.classList.add('active');
+    card.classList.toggle('is-split-mode', !!exercise.splitWeightMode);
 
     const nameInput = card.querySelector('.exercise-name');
     const selectInput = card.querySelector('.exercise-select');
@@ -826,9 +928,11 @@ function renderExercises() {
     const primarySelect = card.querySelector('.exercise-primary');
     const secondaryPicker = card.querySelector('.exercise-secondary-picker');
     const previousSessionEl = card.querySelector('.exercise-last-session');
+    const splitModeInput = card.querySelector('.exercise-split-mode');
     nameInput.value = exercise.name;
     populateExerciseSelect(selectInput, catalog, exercise.name);
     notesInput.value = exercise.notes;
+    if (splitModeInput) splitModeInput.checked = !!exercise.splitWeightMode;
     populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
     const displayProfile = getAutoExerciseProfile(exercise.name, catalog);
     primarySelect.value = exercise.primaryGroup || displayProfile?.primary || 'Automatisch';
@@ -863,6 +967,8 @@ function renderExercises() {
       row.querySelector('.set-index').textContent = index + 1;
       row.querySelector('.set-reps').value = set.reps;
       row.querySelector('.set-weight').value = set.weight;
+      row.querySelector('.set-left-weight').value = set.leftWeight ?? '';
+      row.querySelector('.set-right-weight').value = set.rightWeight ?? '';
       row.querySelector('.set-rpe').value = set.rpe;
       row.querySelector('.set-done').checked = set.done;
       setsBody.appendChild(row);
@@ -1206,6 +1312,7 @@ function addRoutineExercisesToCurrentDay() {
       notes: item.notes || '',
       primaryGroup: item.primaryGroup || '',
       secondaryGroups: [...(item.secondaryGroups || [])],
+      splitWeightMode: false,
       sets: [newSet()]
     });
   });
@@ -1220,19 +1327,19 @@ function updateExerciseStats(exerciseId, cardEl) {
   const exercise = state.exercises.find(ex => ex.id === exerciseId);
   if (!exercise) return;
 
-  const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set), 0);
+  const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set, exercise), 0);
   const best = findBestSet(exercise.sets);
 
   const volumeEl = cardEl.querySelector('.volume');
   const bestEl = cardEl.querySelector('.best');
   volumeEl.textContent = formatNumber(volume);
-  bestEl.textContent = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
+  bestEl.textContent = best ? formatBestSet(best) : '-';
 }
 
 function updateSummary() {
   const totalExercises = state.exercises.length;
   const totalSets = state.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
-  const totalVolume = state.exercises.reduce((sum, ex) => sum + ex.sets.reduce((s, set) => s + setVolume(set), 0), 0);
+  const totalVolume = state.exercises.reduce((sum, ex) => sum + ex.sets.reduce((s, set) => s + setVolume(set, ex), 0), 0);
 
   statExercises.textContent = totalExercises;
   statSets.textContent = totalSets;
@@ -1247,7 +1354,7 @@ function renderPrimarySummary() {
 
   const totals = {};
   state.exercises.forEach(exercise => {
-    const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set), 0);
+    const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set, exercise), 0);
     if (volume <= 0) return;
     const { primary } = resolveExerciseMuscles(exercise);
     totals[primary] = (totals[primary] || 0) + volume;
@@ -1276,14 +1383,14 @@ function renderPrimarySummary() {
 }
 
 function formatSetTag(set) {
-  const reps = Number(set.reps);
-  const weight = Number(set.weight);
-  const hasReps = Number.isFinite(reps) && set.reps !== '';
-  const hasWeight = Number.isFinite(weight) && set.weight !== '';
+  const reps = getNumericField(set?.reps);
+  const hasReps = reps !== null;
+  const load = formatSetLoad(set, null, false);
+  const hasWeight = !!load;
 
-  if (hasReps && hasWeight) return `${reps}x${formatNumber(weight)}`;
+  if (hasReps && hasWeight) return `${reps}x${load}`;
   if (hasReps) return `${reps} reps`;
-  if (hasWeight) return `${formatNumber(weight)} kg`;
+  if (hasWeight) return `${load} kg`;
   return '-';
 }
 
@@ -1316,7 +1423,7 @@ function renderDayExerciseSummary() {
     card.dataset.id = exercise.id;
 
     const name = (exercise.name || '').trim() || 'Oefening';
-    const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set), 0);
+    const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set, exercise), 0);
     const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
     const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date);
 
@@ -1365,10 +1472,19 @@ function renderDayExerciseSummary() {
   });
 }
 
-function setVolume(set) {
-  const reps = Number(set.reps) || 0;
-  const weight = Number(set.weight) || 0;
-  return reps * weight;
+function setVolume(set, exerciseOrMode = null) {
+  const reps = Number(set?.reps) || 0;
+  const weightData = getSetWeightData(set, exerciseOrMode);
+  return reps * weightData.total;
+}
+
+function formatBestSet(set) {
+  const reps = getNumericField(set?.reps);
+  const load = formatSetLoad(set, null, true);
+  if (reps !== null && load) return `${load} x ${reps}`;
+  if (reps !== null) return `${reps} reps`;
+  if (load) return load;
+  return '-';
 }
 
 function findBestSet(sets) {
@@ -1457,6 +1573,8 @@ function handleInputChange(target) {
     target.classList.contains('quick-set-count')
     || target.classList.contains('quick-set-reps')
     || target.classList.contains('quick-set-weight')
+    || target.classList.contains('quick-set-left-weight')
+    || target.classList.contains('quick-set-right-weight')
     || target.classList.contains('quick-set-rpe')
   ) return;
   const exId = card.dataset.id;
@@ -1490,6 +1608,12 @@ function handleInputChange(target) {
   if (target.classList.contains('exercise-secondary')) {
     exercise.secondaryGroups = readSecondaryPickerValues(card, 'exercise-secondary', exercise.primaryGroup);
   }
+  if (target.classList.contains('exercise-split-mode')) {
+    syncExerciseSplitMode(exercise, target.checked);
+    renderExercises();
+    persist();
+    return;
+  }
 
   const setRow = target.closest('.set-row');
   if (setRow) {
@@ -1498,7 +1622,18 @@ function handleInputChange(target) {
     if (!set) return;
 
     if (target.classList.contains('set-reps')) set.reps = target.value;
-    if (target.classList.contains('set-weight')) set.weight = target.value;
+    if (target.classList.contains('set-weight')) {
+      set.weight = target.value;
+      if (!exercise.splitWeightMode) set.weightMode = 'single';
+    }
+    if (target.classList.contains('set-left-weight')) {
+      set.leftWeight = target.value;
+      set.weightMode = 'split';
+    }
+    if (target.classList.contains('set-right-weight')) {
+      set.rightWeight = target.value;
+      set.weightMode = 'split';
+    }
     if (target.classList.contains('set-rpe')) set.rpe = target.value;
     if (target.classList.contains('set-done')) set.done = target.checked;
   }
@@ -1511,7 +1646,10 @@ function handleInputChange(target) {
 function addSet(exId, seed) {
   const exercise = state.exercises.find(ex => ex.id === exId);
   if (!exercise) return;
-  exercise.sets.push(newSet(seed));
+  exercise.sets.push(newSet({
+    ...seed,
+    weightMode: exercise.splitWeightMode ? 'split' : (seed?.weightMode || 'single')
+  }));
   renderExercises();
   persist();
 }
@@ -1559,14 +1697,10 @@ function formatFocusSetsDetail(sets) {
   if (!sets || !sets.length) return '-';
   return sets
     .map((set, index) => {
-      const reps = Number(set.reps);
-      const weight = Number(set.weight);
-      const hasReps = Number.isFinite(reps) && set.reps !== '';
-      const hasWeight = Number.isFinite(weight) && set.weight !== '';
-      if (hasReps && hasWeight) return `S${index + 1} ${reps}x${formatNumber(weight)} kg`;
-      if (hasReps) return `S${index + 1} ${reps} reps`;
-      if (hasWeight) return `S${index + 1} ${formatNumber(weight)} kg`;
-      return `S${index + 1} -`;
+      const label = formatSetTag(set);
+      if (label === '-') return `S${index + 1} -`;
+      const suffix = getSetWeightData(set).hasWeight && !label.endsWith('kg') ? ' kg' : '';
+      return `S${index + 1} ${label}${suffix}`;
     })
     .join(', ');
 }
@@ -2024,7 +2158,7 @@ function computeWeekTotals(all, dates) {
     day.exercises.forEach(exercise => {
       const name = (exercise.name || '').trim();
       if (!name) return;
-      const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set), 0);
+      const volume = (exercise.sets || []).reduce((sum, set) => sum + setVolume(set, exercise), 0);
       const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
       primaryTotals[primary][index] += volume;
       secondaryGroups.forEach(group => {
@@ -2091,7 +2225,7 @@ function updateChartReadout(readoutEl, hit) {
   readoutEl.textContent = `${formatShortDate(hit.date)} • ${hit.group}: ${formatNumber(hit.value)} kg • Dagtotaal: ${formatNumber(hit.total)} kg`;
 }
 
-function getCanvasHit(canvas, event) {
+function getCanvasPointer(canvas, event) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
@@ -2101,14 +2235,26 @@ function getCanvasHit(canvas, event) {
 
   const x = (clientX - rect.left) * scaleX;
   const y = (clientY - rect.top) * scaleY;
+  return {
+    x,
+    y,
+    clientX,
+    clientY
+  };
+}
+
+function getCanvasHit(canvas, event) {
+  const position = getCanvasPointer(canvas, event);
+  if (!position) return null;
+
   const hit = (canvas._stackedHitboxes || []).find(box =>
-    x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height
+    position.x >= box.x && position.x <= box.x + box.width && position.y >= box.y && position.y <= box.y + box.height
   );
 
   return {
     hit,
-    clientX,
-    clientY
+    clientX: position.clientX,
+    clientY: position.clientY
   };
 }
 
@@ -2162,6 +2308,47 @@ function bindStackedChartHover(canvas, hitboxes, readoutEl) {
     updateChartReadout(canvas._stackedReadout, null);
   };
 
+  canvas.addEventListener('mouseleave', leaveHandler);
+  canvas.addEventListener('pointerleave', leaveHandler);
+  canvas.addEventListener('touchend', leaveHandler, { passive: true });
+}
+
+function bindLineChartHover(canvas, hitboxes) {
+  if (!canvas) return;
+  canvas._lineHitboxes = hitboxes;
+  canvas.classList.toggle('chart-hover', hitboxes.length > 0);
+
+  if (canvas._lineHoverBound) return;
+  canvas._lineHoverBound = true;
+
+  const moveHandler = event => {
+    const position = getCanvasPointer(canvas, event);
+    if (!position) return false;
+
+    const hit = (canvas._lineHitboxes || []).find(point =>
+      Math.hypot(position.x - point.x, position.y - point.y) <= point.radius
+    );
+
+    if (!hit) {
+      hideChartTooltip();
+      return false;
+    }
+
+    showChartTooltip(
+      `<span class="title">${formatShortDate(hit.date)}</span><span class="value">Totaal volume: ${formatNumber(hit.volume)} kg</span><span class="title">Sets x reps x gewicht</span><span class="value">${hit.setsDetail || '-'}</span>`,
+      position.clientX,
+      position.clientY
+    );
+    return true;
+  };
+
+  canvas.addEventListener('pointermove', moveHandler);
+  canvas.addEventListener('mousemove', moveHandler);
+  canvas.addEventListener('pointerdown', moveHandler);
+  canvas.addEventListener('touchstart', moveHandler, { passive: true });
+  canvas.addEventListener('touchmove', moveHandler, { passive: true });
+
+  const leaveHandler = () => hideChartTooltip();
   canvas.addEventListener('mouseleave', leaveHandler);
   canvas.addEventListener('pointerleave', leaveHandler);
   canvas.addEventListener('touchend', leaveHandler, { passive: true });
@@ -2399,8 +2586,8 @@ function buildExerciseProgress(name, all) {
       const sets = matches.flatMap(ex => ex.sets || []);
       const volume = sets.reduce((sum, set) => sum + setVolume(set), 0);
       const best = findBestSet(sets);
-      const bestStr = best ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
-      const bestWeight = best ? Number(best.weight) || 0 : 0;
+      const bestStr = best ? formatBestSet(best) : '-';
+      const bestWeight = best ? getSetWeightData(best).total : 0;
       const bestReps = best ? Number(best.reps) || 0 : 0;
       const setsLabel = formatSetsSummary(sets);
       const setsDetail = formatFocusSetsDetail(sets);
@@ -2966,6 +3153,7 @@ function drawChart(canvas, points, options = {}) {
     ctx.fillStyle = '#6a5e54';
     ctx.font = '14px Space Grotesk';
     ctx.fillText(emptyLabel, 14, h / 2);
+    bindLineChartHover(canvas, []);
     return;
   }
 
@@ -2979,6 +3167,7 @@ function drawChart(canvas, points, options = {}) {
   const minValue = 0;
   const ticks = 4;
   const xStep = chartWidth / (points.length - 1 || 1);
+  const hitboxes = [];
 
   ctx.strokeStyle = 'rgba(26,26,26,0.14)';
   ctx.lineWidth = 1.25;
@@ -3037,6 +3226,14 @@ function drawChart(canvas, points, options = {}) {
     ctx.beginPath();
     ctx.arc(x, y, 3.5, 0, Math.PI * 2);
     ctx.fill();
+    hitboxes.push({
+      x,
+      y,
+      radius: 12,
+      date: point.date,
+      volume: point.volume,
+      setsDetail: point.setsDetail
+    });
   });
 
   const labelStep = Math.max(1, Math.ceil(points.length / 5));
@@ -3068,6 +3265,8 @@ function drawChart(canvas, points, options = {}) {
       ctx.stroke();
     });
   }
+
+  bindLineChartHover(canvas, hitboxes);
 }
 
 function flashSaved() {
@@ -3214,19 +3413,20 @@ function buildRowsForDay(date, day) {
 
     (exercise.sets || []).forEach((set, index) => {
       const repsValue = Number(set.reps);
-      const weightValue = Number(set.weight);
+      const weightData = getSetWeightData(set, exercise);
+      const weightValue = weightData.total;
       const reps = Number.isFinite(repsValue) && set.reps !== '' ? repsValue : '';
-      const weight = Number.isFinite(weightValue) && set.weight !== '' ? weightValue : '';
+      const weight = Number.isFinite(weightValue) && weightData.hasWeight ? weightValue : '';
       const rpe = set.rpe ?? '';
       const done = set.done ? 'yes' : '';
-      const volume = (Number(repsValue) || 0) * (Number(weightValue) || 0);
+      const volume = setVolume(set, exercise);
 
       totalSets += 1;
       totalVolume += volume;
 
       if (volume > bestVolume) {
         bestVolume = volume;
-        best = { weight: weightValue || 0, reps: repsValue || 0 };
+        best = set;
       }
 
       rowsSets.push([
@@ -3247,7 +3447,7 @@ function buildRowsForDay(date, day) {
     });
   });
 
-  const bestStr = best && bestVolume > 0 ? `${formatNumber(best.weight)} x ${best.reps}` : '-';
+  const bestStr = best && bestVolume > 0 ? formatBestSet(best) : '-';
   const rowsDays = [[
     date,
     day.sessionName || '',

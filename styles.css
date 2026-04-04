@@ -567,6 +567,15 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   color: var(--muted);
 }
 
+.split-mode-toggle {
+  padding: 2px 0 0;
+}
+
+.split-mode-toggle span:last-child {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
 .quick-builder {
   display: grid;
   gap: 10px;
@@ -588,6 +597,32 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 
 .quick-control input {
   width: 100%;
+}
+
+.quick-weight-split,
+.column-left,
+.column-right,
+.set-left-weight,
+.set-right-weight {
+  display: none;
+}
+
+.exercise-card.is-split-mode .quick-weight-single,
+.exercise-card.is-split-mode .column-weight,
+.exercise-card.is-split-mode .set-weight {
+  display: none;
+}
+
+.exercise-card.is-split-mode .quick-weight-split,
+.exercise-card.is-split-mode .column-left,
+.exercise-card.is-split-mode .column-right,
+.exercise-card.is-split-mode .set-left-weight,
+.exercise-card.is-split-mode .set-right-weight {
+  display: block;
+}
+
+.exercise-card.is-split-mode .quick-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .routine-list {
@@ -636,9 +671,14 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 
 .sets-head, .set-row {
   display: grid;
-  grid-template-columns: 32px 1fr 1fr 1fr 32px;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 32px 32px;
   gap: 10px;
   align-items: center;
+}
+
+.exercise-card.is-split-mode .sets-head,
+.exercise-card.is-split-mode .set-row {
+  grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 32px 32px;
 }
 
 .sets-head {
