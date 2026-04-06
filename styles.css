@@ -600,6 +600,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 }
 
 .quick-weight-split,
+.quick-count-split,
 .column-left,
 .column-right,
 .set-left-weight,
@@ -607,12 +608,14 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   display: none;
 }
 
+.exercise-card.is-split-mode .quick-count-single,
 .exercise-card.is-split-mode .quick-weight-single,
 .exercise-card.is-split-mode .column-weight,
 .exercise-card.is-split-mode .set-weight {
   display: none;
 }
 
+.exercise-card.is-split-mode .quick-count-split,
 .exercise-card.is-split-mode .quick-weight-split,
 .exercise-card.is-split-mode .column-left,
 .exercise-card.is-split-mode .column-right,
@@ -622,7 +625,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 }
 
 .exercise-card.is-split-mode .quick-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .routine-list {

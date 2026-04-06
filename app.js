@@ -864,6 +864,8 @@ function applyQuickSetBuilder(exId, card) {
   if (!exercise || !card) return;
 
   const count = Number(card.querySelector('.quick-set-count')?.value || 0);
+  const leftCount = Number(card.querySelector('.quick-set-left-count')?.value || 0);
+  const rightCount = Number(card.querySelector('.quick-set-right-count')?.value || 0);
   const reps = card.querySelector('.quick-set-reps')?.value ?? '';
   const weight = card.querySelector('.quick-set-weight')?.value ?? '';
   const leftWeight = card.querySelector('.quick-set-left-weight')?.value ?? '';
@@ -871,8 +873,13 @@ function applyQuickSetBuilder(exId, card) {
   const rpe = card.querySelector('.quick-set-rpe')?.value ?? '';
   const splitMode = !!exercise.splitWeightMode;
 
-  if (!Number.isFinite(count) || count < 1) {
+  if (!splitMode && (!Number.isFinite(count) || count < 1)) {
     alert('Vul eerst in hoeveel sets je wilt maken.');
+    return;
+  }
+
+  if (splitMode && (!Number.isFinite(leftCount) || leftCount < 0 || !Number.isFinite(rightCount) || rightCount < 0 || (leftCount < 1 && rightCount < 1))) {
+    alert('Vul in split-modus minstens 1 set links of rechts in.');
     return;
   }
 
@@ -885,14 +892,22 @@ function applyQuickSetBuilder(exId, card) {
     return;
   }
 
-  const generatedSets = Array.from({ length: count }, () => newSet({
-    reps,
-    weight,
-    leftWeight,
-    rightWeight,
-    weightMode: splitMode ? 'split' : 'single',
-    rpe
-  }));
+  const generatedSets = splitMode
+    ? Array.from({ length: Math.max(leftCount, rightCount) }, (_, index) => newSet({
+      reps,
+      leftWeight: index < leftCount ? leftWeight : '',
+      rightWeight: index < rightCount ? rightWeight : '',
+      weightMode: 'split',
+      rpe
+    }))
+    : Array.from({ length: count }, () => newSet({
+      reps,
+      weight,
+      leftWeight,
+      rightWeight,
+      weightMode: 'single',
+      rpe
+    }));
   const replaceBlankStarter = exercise.sets.length === 1 && isBlankSet(exercise.sets[0]);
 
   exercise.sets = replaceBlankStarter
@@ -1571,6 +1586,8 @@ function handleInputChange(target) {
   if (!card) return;
   if (
     target.classList.contains('quick-set-count')
+    || target.classList.contains('quick-set-left-count')
+    || target.classList.contains('quick-set-right-count')
     || target.classList.contains('quick-set-reps')
     || target.classList.contains('quick-set-weight')
     || target.classList.contains('quick-set-left-weight')
