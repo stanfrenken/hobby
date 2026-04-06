@@ -30,6 +30,7 @@ const addRoutineToDayBtn = document.getElementById('addRoutineToDayBtn');
 const addExerciseMiniBtn = document.getElementById('addExerciseMini');
 const addExerciseEmptyBtn = document.getElementById('addExerciseEmpty');
 const saveDayBtn = document.getElementById('saveDay');
+const exportExcelLogBtn = document.getElementById('exportExcelLogBtn');
 const exerciseList = document.getElementById('exerciseList');
 const emptyState = document.getElementById('emptyState');
 const dayBadge = document.getElementById('dayBadge');
@@ -516,6 +517,8 @@ function normalizeAllData(data) {
         ? ex.sets.map(set => ({
           id: set?.id || uid(),
           reps: set?.reps ?? '',
+          leftReps: set?.leftReps ?? '',
+          rightReps: set?.rightReps ?? '',
           weight: set?.weight ?? '',
           leftWeight: set?.leftWeight ?? '',
           rightWeight: set?.rightWeight ?? '',
@@ -575,6 +578,8 @@ function loadDay(date) {
     sets: (ex.sets || []).map(set => ({
       id: set.id || uid(),
       reps: set.reps ?? '',
+      leftReps: set.leftReps ?? '',
+      rightReps: set.rightReps ?? '',
       weight: set.weight ?? '',
       leftWeight: set.leftWeight ?? '',
       rightWeight: set.rightWeight ?? '',
@@ -628,6 +633,8 @@ function newSet(seed) {
   return {
     id: uid(),
     reps: seed?.reps ?? '',
+    leftReps: seed?.leftReps ?? '',
+    rightReps: seed?.rightReps ?? '',
     weight: seed?.weight ?? '',
     leftWeight: seed?.leftWeight ?? '',
     rightWeight: seed?.rightWeight ?? '',
@@ -822,6 +829,29 @@ function getSetWeightData(set, exerciseOrMode = null) {
   };
 }
 
+function getSetRepData(set, exerciseOrMode = null) {
+  const splitMode = usesSplitWeight(set, exerciseOrMode);
+  if (splitMode) {
+    const left = getNumericField(set?.leftReps);
+    const right = getNumericField(set?.rightReps);
+    return {
+      splitMode: true,
+      left,
+      right,
+      total: (left || 0) + (right || 0),
+      hasReps: left !== null || right !== null
+    };
+  }
+
+  const reps = getNumericField(set?.reps);
+  return {
+    splitMode: false,
+    reps,
+    total: reps || 0,
+    hasReps: reps !== null
+  };
+}
+
 function formatSetLoad(set, exerciseOrMode = null, includeUnit = false) {
   const weightData = getSetWeightData(set, exerciseOrMode);
   if (!weightData.hasWeight) return '';
@@ -846,12 +876,22 @@ function syncExerciseSplitMode(exercise, splitMode) {
       if (!hasInputValue(set.leftWeight)) set.leftWeight = set.weight;
       if (!hasInputValue(set.rightWeight)) set.rightWeight = set.weight;
     }
+    if (exercise.splitWeightMode && hasInputValue(set.reps)) {
+      if (!hasInputValue(set.leftReps)) set.leftReps = set.reps;
+      if (!hasInputValue(set.rightReps)) set.rightReps = set.reps;
+    }
+    if (!exercise.splitWeightMode) {
+      if (!hasInputValue(set.weight)) set.weight = set.leftWeight || set.rightWeight || '';
+      if (!hasInputValue(set.reps)) set.reps = set.leftReps || set.rightReps || '';
+    }
   });
 }
 
 function isBlankSet(set) {
   return !set
     || ((set.reps ?? '') === ''
+      && (set.leftReps ?? '') === ''
+      && (set.rightReps ?? '') === ''
       && (set.weight ?? '') === ''
       && (set.leftWeight ?? '') === ''
       && (set.rightWeight ?? '') === ''
@@ -867,6 +907,8 @@ function applyQuickSetBuilder(exId, card) {
   const leftCount = Number(card.querySelector('.quick-set-left-count')?.value || 0);
   const rightCount = Number(card.querySelector('.quick-set-right-count')?.value || 0);
   const reps = card.querySelector('.quick-set-reps')?.value ?? '';
+  const leftReps = card.querySelector('.quick-set-left-reps')?.value ?? '';
+  const rightReps = card.querySelector('.quick-set-right-reps')?.value ?? '';
   const weight = card.querySelector('.quick-set-weight')?.value ?? '';
   const leftWeight = card.querySelector('.quick-set-left-weight')?.value ?? '';
   const rightWeight = card.querySelector('.quick-set-right-weight')?.value ?? '';
@@ -886,15 +928,19 @@ function applyQuickSetBuilder(exId, card) {
   const hasWeightInput = splitMode
     ? `${leftWeight}` !== '' || `${rightWeight}` !== ''
     : `${weight}` !== '';
+  const hasRepsInput = splitMode
+    ? `${leftReps}` !== '' || `${rightReps}` !== ''
+    : `${reps}` !== '';
 
-  if (`${reps}` === '' && !hasWeightInput && `${rpe}` === '') {
+  if (!hasRepsInput && !hasWeightInput && `${rpe}` === '') {
     alert('Vul minstens reps, gewicht of RPE in voor je sets.');
     return;
   }
 
   const generatedSets = splitMode
     ? Array.from({ length: Math.max(leftCount, rightCount) }, (_, index) => newSet({
-      reps,
+      leftReps: index < leftCount ? leftReps : '',
+      rightReps: index < rightCount ? rightReps : '',
       leftWeight: index < leftCount ? leftWeight : '',
       rightWeight: index < rightCount ? rightWeight : '',
       weightMode: 'split',
@@ -981,7 +1027,9 @@ function renderExercises() {
       row.dataset.id = set.id;
       row.querySelector('.set-index').textContent = index + 1;
       row.querySelector('.set-reps').value = set.reps;
+      row.querySelector('.set-left-reps').value = set.leftReps ?? '';
       row.querySelector('.set-weight').value = set.weight;
+      row.querySelector('.set-right-reps').value = set.rightReps ?? '';
       row.querySelector('.set-left-weight').value = set.leftWeight ?? '';
       row.querySelector('.set-right-weight').value = set.rightWeight ?? '';
       row.querySelector('.set-rpe').value = set.rpe;
@@ -1398,14 +1446,23 @@ function renderPrimarySummary() {
 }
 
 function formatSetTag(set) {
-  const reps = getNumericField(set?.reps);
-  const hasReps = reps !== null;
-  const load = formatSetLoad(set, null, false);
-  const hasWeight = !!load;
+  const repData = getSetRepData(set);
+  const weightData = getSetWeightData(set);
 
-  if (hasReps && hasWeight) return `${reps}x${load}`;
-  if (hasReps) return `${reps} reps`;
-  if (hasWeight) return `${load} kg`;
+  if (repData.splitMode || weightData.splitMode) {
+    const parts = [];
+    const leftUsed = repData.left !== null || weightData.left !== null;
+    const rightUsed = repData.right !== null || weightData.right !== null;
+    if (leftUsed) parts.push(`L ${repData.left ?? '-'}x${weightData.left !== null ? formatNumber(weightData.left) : '-'}`);
+    if (rightUsed) parts.push(`R ${repData.right ?? '-'}x${weightData.right !== null ? formatNumber(weightData.right) : '-'}`);
+    return parts.length ? parts.join(' · ') : '-';
+  }
+
+  const hasReps = repData.reps !== null;
+  const hasWeight = weightData.weight !== null;
+  if (hasReps && hasWeight) return `${repData.reps}x${formatNumber(weightData.weight)}`;
+  if (hasReps) return `${repData.reps} reps`;
+  if (hasWeight) return `${formatNumber(weightData.weight)} kg`;
   return '-';
 }
 
@@ -1488,13 +1545,25 @@ function renderDayExerciseSummary() {
 }
 
 function setVolume(set, exerciseOrMode = null) {
-  const reps = Number(set?.reps) || 0;
+  const repData = getSetRepData(set, exerciseOrMode);
   const weightData = getSetWeightData(set, exerciseOrMode);
-  return reps * weightData.total;
+  if (repData.splitMode || weightData.splitMode) {
+    return (repData.left || 0) * (weightData.left || 0) + (repData.right || 0) * (weightData.right || 0);
+  }
+  return (repData.reps || 0) * (weightData.weight || 0);
 }
 
 function formatBestSet(set) {
-  const reps = getNumericField(set?.reps);
+  const repData = getSetRepData(set);
+  const weightData = getSetWeightData(set);
+  if (repData.splitMode || weightData.splitMode) {
+    const parts = [];
+    if (repData.left !== null || weightData.left !== null) parts.push(`L ${repData.left ?? '-'}x${weightData.left !== null ? formatNumber(weightData.left) : '-'} kg`);
+    if (repData.right !== null || weightData.right !== null) parts.push(`R ${repData.right ?? '-'}x${weightData.right !== null ? formatNumber(weightData.right) : '-'} kg`);
+    return parts.length ? parts.join(' · ') : '-';
+  }
+
+  const reps = repData.reps;
   const load = formatSetLoad(set, null, true);
   if (reps !== null && load) return `${load} x ${reps}`;
   if (reps !== null) return `${reps} reps`;
@@ -1589,6 +1658,8 @@ function handleInputChange(target) {
     || target.classList.contains('quick-set-left-count')
     || target.classList.contains('quick-set-right-count')
     || target.classList.contains('quick-set-reps')
+    || target.classList.contains('quick-set-left-reps')
+    || target.classList.contains('quick-set-right-reps')
     || target.classList.contains('quick-set-weight')
     || target.classList.contains('quick-set-left-weight')
     || target.classList.contains('quick-set-right-weight')
@@ -1639,9 +1710,17 @@ function handleInputChange(target) {
     if (!set) return;
 
     if (target.classList.contains('set-reps')) set.reps = target.value;
+    if (target.classList.contains('set-left-reps')) {
+      set.leftReps = target.value;
+      set.weightMode = 'split';
+    }
     if (target.classList.contains('set-weight')) {
       set.weight = target.value;
       if (!exercise.splitWeightMode) set.weightMode = 'single';
+    }
+    if (target.classList.contains('set-right-reps')) {
+      set.rightReps = target.value;
+      set.weightMode = 'split';
     }
     if (target.classList.contains('set-left-weight')) {
       set.leftWeight = target.value;
@@ -1714,6 +1793,19 @@ function formatFocusSetsDetail(sets) {
   if (!sets || !sets.length) return '-';
   return sets
     .map((set, index) => {
+      const repData = getSetRepData(set);
+      const weightData = getSetWeightData(set);
+      if (repData.splitMode || weightData.splitMode) {
+        const parts = [];
+        if (repData.left !== null || weightData.left !== null) {
+          parts.push(`L ${repData.left ?? '-'}x${weightData.left !== null ? formatNumber(weightData.left) : '-'} kg`);
+        }
+        if (repData.right !== null || weightData.right !== null) {
+          parts.push(`R ${repData.right ?? '-'}x${weightData.right !== null ? formatNumber(weightData.right) : '-'} kg`);
+        }
+        return `S${index + 1} ${parts.length ? parts.join(' · ') : '-'}`;
+      }
+
       const label = formatSetTag(set);
       if (label === '-') return `S${index + 1} -`;
       const suffix = getSetWeightData(set).hasWeight && !label.endsWith('kg') ? ' kg' : '';
@@ -3294,6 +3386,119 @@ function flashSaved() {
   }, 800);
 }
 
+function escapeSpreadsheetXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function createSpreadsheetCell(value) {
+  if (value === null || value === undefined || value === '') {
+    return '<Cell><Data ss:Type="String"></Data></Cell>';
+  }
+  const isNumber = typeof value === 'number' && Number.isFinite(value);
+  const type = isNumber ? 'Number' : 'String';
+  return `<Cell><Data ss:Type="${type}">${escapeSpreadsheetXml(value)}</Data></Cell>`;
+}
+
+function buildSpreadsheetXml(sheets) {
+  const worksheetXml = sheets.map(sheet => {
+    const rowsXml = (sheet.rows || []).map(row =>
+      `<Row>${row.map(cell => createSpreadsheetCell(cell)).join('')}</Row>`
+    ).join('');
+    return `<Worksheet ss:Name="${escapeSpreadsheetXml(sheet.name)}"><Table>${rowsXml}</Table></Worksheet>`;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">${worksheetXml}</Workbook>`;
+}
+
+function exportCurrentDayExcel() {
+  const day = cloneState();
+  const rows = [[
+    'Datum',
+    'Sessie',
+    'Lichaamsgewicht (kg)',
+    'Oefeningen',
+    'Sets',
+    'Totaal volume (kg)'
+  ], [
+    state.date,
+    day.sessionName || '',
+    day.bodyweight === '' ? '' : Number(day.bodyweight) || day.bodyweight,
+    day.exercises.length,
+    day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).length, 0),
+    day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).reduce((setSum, set) => setSum + setVolume(set, exercise), 0), 0)
+  ]];
+
+  const setRows = [[
+    'Datum',
+    'Sessie',
+    'Oefening',
+    'Primary',
+    'Secondary',
+    'Notities',
+    'Set',
+    'Modus',
+    'Reps',
+    'Gewicht',
+    'Reps links',
+    'Gewicht links',
+    'Reps rechts',
+    'Gewicht rechts',
+    'RPE',
+    'Afgevinkt',
+    'Volume (kg)'
+  ]];
+
+  day.exercises.forEach(exercise => {
+    const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
+    (exercise.sets || []).forEach((set, index) => {
+      const repData = getSetRepData(set, exercise);
+      const weightData = getSetWeightData(set, exercise);
+      const splitMode = repData.splitMode || weightData.splitMode;
+      setRows.push([
+        state.date,
+        day.sessionName || '',
+        exercise.name || '',
+        primary,
+        secondaryGroups.join(', '),
+        exercise.notes || '',
+        index + 1,
+        splitMode ? 'Alternating' : 'Standaard',
+        splitMode ? '' : (repData.reps ?? ''),
+        splitMode ? '' : (weightData.weight ?? ''),
+        splitMode ? (repData.left ?? '') : '',
+        splitMode ? (weightData.left ?? '') : '',
+        splitMode ? (repData.right ?? '') : '',
+        splitMode ? (weightData.right ?? '') : '',
+        set.rpe ?? '',
+        set.done ? 'Ja' : '',
+        setVolume(set, exercise)
+      ]);
+    });
+  });
+
+  const xml = buildSpreadsheetXml([
+    { name: 'Samenvatting', rows },
+    { name: 'Sets', rows: setRows }
+  ]);
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `fitness-logboek-${state.date || todayISO()}.xls`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function exportData() {
   const all = loadAll();
   all[state.date] = cloneState();
@@ -3969,6 +4174,7 @@ if (pageRoutinesBtn) {
 addExerciseBtn.addEventListener('click', addExercise);
 addExerciseMiniBtn.addEventListener('click', addExercise);
 addExerciseEmptyBtn.addEventListener('click', addExercise);
+if (exportExcelLogBtn) exportExcelLogBtn.addEventListener('click', exportCurrentDayExcel);
 if (addRoutineToDayBtn) addRoutineToDayBtn.addEventListener('click', addRoutineExercisesToCurrentDay);
 if (addRoutineExerciseBtn) addRoutineExerciseBtn.addEventListener('click', addRoutineExercise);
 if (addRoutineOptionBtn) addRoutineOptionBtn.addEventListener('click', addRoutineOption);
