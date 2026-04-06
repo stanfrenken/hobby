@@ -389,6 +389,13 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   margin-bottom: 12px;
 }
 
+.mini-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .panel-header.spaced { margin-top: 18px; }
 
 .panel-header.compact {

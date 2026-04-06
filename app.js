@@ -13,6 +13,8 @@ const VISION_SETTINGS_KEY = 'fitnessLog.visionSettings.v1';
 const dateInput = document.getElementById('dateInput');
 const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
+const startTimeInput = document.getElementById('startTimeInput');
+const endTimeInput = document.getElementById('endTimeInput');
 const routineSourceDaySelect = document.getElementById('routineSourceDay');
 const routineSourceOptionSelect = document.getElementById('routineSourceOption');
 const pageStoryBtn = document.getElementById('pageStoryBtn');
@@ -39,8 +41,10 @@ const dayEmpty = document.getElementById('dayEmpty');
 const primarySummary = document.getElementById('primarySummary');
 const weekPrimaryChart = document.getElementById('weekPrimaryChart');
 const weekSecondaryChart = document.getElementById('weekSecondaryChart');
+const durationChart = document.getElementById('durationChart');
 const weekPrimaryReadout = document.getElementById('weekPrimaryReadout');
 const weekSecondaryReadout = document.getElementById('weekSecondaryReadout');
+const durationReadout = document.getElementById('durationReadout');
 const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
 const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
 const dashboardWeekInput = document.getElementById('dashboardWeek');
@@ -55,6 +59,11 @@ const focusTable = document.getElementById('focusTable');
 const focusEmpty = document.getElementById('focusEmpty');
 const bodyweightChart = document.getElementById('bodyweightChart');
 const bodyweightHint = document.getElementById('bodyweightHint');
+const exportWeekPrimaryBtn = document.getElementById('exportWeekPrimaryBtn');
+const exportWeekSecondaryBtn = document.getElementById('exportWeekSecondaryBtn');
+const exportDurationBtn = document.getElementById('exportDurationBtn');
+const exportFocusBtn = document.getElementById('exportFocusBtn');
+const exportBodyweightBtn = document.getElementById('exportBodyweightBtn');
 const progressDateInput = document.getElementById('progressDateInput');
 const progressWeightInput = document.getElementById('progressWeightInput');
 const progressPhotoInput = document.getElementById('progressPhotoInput');
@@ -106,6 +115,8 @@ const state = {
   date: '',
   sessionName: '',
   bodyweight: '',
+  startTime: '',
+  endTime: '',
   updatedAt: 0,
   exercises: []
 };
@@ -533,6 +544,8 @@ function normalizeAllData(data) {
       normalized[date] = {
         sessionName: day.sessionName || '',
         bodyweight: day.bodyweight ?? '',
+        startTime: typeof day.startTime === 'string' ? day.startTime : '',
+        endTime: typeof day.endTime === 'string' ? day.endTime : '',
         updatedAt: Number(day.updatedAt) || 0,
         exercises: []
       };
@@ -542,6 +555,12 @@ function normalizeAllData(data) {
     }
     if ((normalized[date].bodyweight === '' || normalized[date].bodyweight === undefined) && day.bodyweight !== undefined) {
       normalized[date].bodyweight = day.bodyweight;
+    }
+    if (!normalized[date].startTime && day.startTime) {
+      normalized[date].startTime = day.startTime;
+    }
+    if (!normalized[date].endTime && day.endTime) {
+      normalized[date].endTime = day.endTime;
     }
     if ((Number(day.updatedAt) || 0) > (Number(normalized[date].updatedAt) || 0)) {
       normalized[date].updatedAt = Number(day.updatedAt) || 0;
@@ -556,6 +575,8 @@ function cloneState() {
   return JSON.parse(JSON.stringify({
     sessionName: state.sessionName,
     bodyweight: state.bodyweight,
+    startTime: state.startTime,
+    endTime: state.endTime,
     updatedAt: state.updatedAt || 0,
     exercises: state.exercises
   }));
@@ -567,6 +588,8 @@ function loadDay(date) {
   state.date = date;
   state.sessionName = day?.sessionName || '';
   state.bodyweight = day?.bodyweight ?? '';
+  state.startTime = day?.startTime || '';
+  state.endTime = day?.endTime || '';
   state.updatedAt = Number(day?.updatedAt) || 0;
   state.exercises = (day?.exercises || []).map(ex => ({
     id: ex.id || uid(),
@@ -591,6 +614,8 @@ function loadDay(date) {
 
   sessionNameInput.value = state.sessionName;
   if (bodyweightInput) bodyweightInput.value = state.bodyweight === '' ? '' : state.bodyweight;
+  if (startTimeInput) startTimeInput.value = state.startTime || '';
+  if (endTimeInput) endTimeInput.value = state.endTime || '';
   updateRoutineApplyButton({ syncSelect: true });
 }
 
@@ -1650,6 +1675,29 @@ function formatLongDate(value) {
   }).format(date);
 }
 
+function parseTimeToMinutes(value) {
+  const raw = String(value || '').trim();
+  if (!/^\d{2}:\d{2}$/.test(raw)) return null;
+  const [hours, minutes] = raw.split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function computeTrainingDurationMinutes(day) {
+  const start = parseTimeToMinutes(day?.startTime);
+  const end = parseTimeToMinutes(day?.endTime);
+  if (start === null || end === null) return 0;
+  if (end >= start) return end - start;
+  return (24 * 60 - start) + end;
+}
+
+function formatTrainingWindow(startTime, endTime) {
+  const start = startTime || '-';
+  const end = endTime || '-';
+  return `${start} - ${end}`;
+}
+
 function handleInputChange(target) {
   const card = target.closest('.exercise-card');
   if (!card) return;
@@ -1776,6 +1824,7 @@ function refreshProgress() {
   updateFocusExerciseSelector(all);
   renderExerciseFocus(all);
   renderBodyweightTrend(all);
+  renderTrainingDurationTrend(all);
 }
 
 function collectExerciseNames(all) {
@@ -2463,6 +2512,64 @@ function bindLineChartHover(canvas, hitboxes) {
   canvas.addEventListener('touchend', leaveHandler, { passive: true });
 }
 
+function updateDurationReadout(readoutEl, hit) {
+  if (!readoutEl) return;
+  if (!hit) {
+    readoutEl.textContent = 'Beweeg over de chart voor details.';
+    return;
+  }
+  readoutEl.textContent = `${formatShortDate(hit.date)} • ${formatNumber(hit.minutes)} min • ${formatTrainingWindow(hit.startTime, hit.endTime)}`;
+}
+
+function bindDurationChartHover(canvas, hitboxes, readoutEl) {
+  if (!canvas) return;
+  canvas._durationHitboxes = hitboxes;
+  canvas._durationReadout = readoutEl || null;
+  canvas.classList.toggle('chart-hover', hitboxes.length > 0);
+  updateDurationReadout(canvas._durationReadout, null);
+
+  if (canvas._durationHoverBound) return;
+  canvas._durationHoverBound = true;
+
+  const moveHandler = event => {
+    const position = getCanvasPointer(canvas, event);
+    if (!position) return false;
+
+    const hit = (canvas._durationHitboxes || []).find(box =>
+      position.x >= box.x && position.x <= box.x + box.width && position.y >= box.y && position.y <= box.y + box.height
+    );
+
+    if (!hit) {
+      hideChartTooltip();
+      updateDurationReadout(canvas._durationReadout, null);
+      return false;
+    }
+
+    updateDurationReadout(canvas._durationReadout, hit);
+    showChartTooltip(
+      `<span class="title">${formatShortDate(hit.date)}</span><span class="value">${formatNumber(hit.minutes)} minuten</span><span class="title">Start: ${hit.startTime || '-'}</span><span class="title">Einde: ${hit.endTime || '-'}</span>`,
+      position.clientX,
+      position.clientY
+    );
+    return true;
+  };
+
+  canvas.addEventListener('pointermove', moveHandler);
+  canvas.addEventListener('mousemove', moveHandler);
+  canvas.addEventListener('pointerdown', moveHandler);
+  canvas.addEventListener('touchstart', moveHandler, { passive: true });
+  canvas.addEventListener('touchmove', moveHandler, { passive: true });
+
+  const leaveHandler = () => {
+    hideChartTooltip();
+    updateDurationReadout(canvas._durationReadout, null);
+  };
+
+  canvas.addEventListener('mouseleave', leaveHandler);
+  canvas.addEventListener('pointerleave', leaveHandler);
+  canvas.addEventListener('touchend', leaveHandler, { passive: true });
+}
+
 function drawStackedBarChart(canvas, dates, totals, options = {}) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -2562,6 +2669,98 @@ function drawStackedBarChart(canvas, dates, totals, options = {}) {
     });
 
   bindStackedChartHover(canvas, hitboxes, options.readoutEl);
+}
+
+function drawDurationBarChart(canvas, rows, options = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const paddingLeft = 64;
+  const paddingRight = 14;
+  const paddingTop = 14;
+  const paddingBottom = 30;
+  const hitboxes = [];
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+
+  const hasData = rows.some(row => row.minutes > 0);
+  if (!rows.length || !hasData) {
+    ctx.fillStyle = '#6a5e54';
+    ctx.font = '14px Space Grotesk';
+    ctx.fillText('Nog geen trainingstijden ingevuld.', 14, h / 2);
+    bindDurationChartHover(canvas, [], options.readoutEl);
+    return;
+  }
+
+  const ticks = 4;
+  const maxMinutes = getNiceAxisMax(Math.max(...rows.map(row => row.minutes), 10), ticks);
+  const chartHeight = h - paddingTop - paddingBottom;
+  const chartWidth = w - paddingLeft - paddingRight;
+  const barGap = 8;
+  const barWidth = (chartWidth - barGap * (rows.length - 1)) / rows.length;
+
+  ctx.strokeStyle = 'rgba(26,26,26,0.16)';
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.moveTo(paddingLeft, paddingTop);
+  ctx.lineTo(paddingLeft, h - paddingBottom);
+  ctx.lineTo(w - paddingRight, h - paddingBottom);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(18, h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = '700 12px Space Grotesk';
+  ctx.textAlign = 'center';
+  ctx.fillText('minuten', 0, 0);
+  ctx.restore();
+
+  for (let i = 0; i <= ticks; i += 1) {
+    const value = (maxMinutes / ticks) * i;
+    const y = h - paddingBottom - (value / maxMinutes) * chartHeight;
+    ctx.strokeStyle = 'rgba(26,26,26,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(w - paddingRight, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = '600 11px Space Grotesk';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${formatNumber(value)} min`, paddingLeft - 6, y);
+  }
+
+  rows.forEach((row, index) => {
+    const x = paddingLeft + index * (barWidth + barGap);
+    const height = (row.minutes / maxMinutes) * chartHeight;
+    const y = h - paddingBottom - height;
+    ctx.fillStyle = '#0f6b66';
+    ctx.fillRect(x, y, barWidth, height);
+    hitboxes.push({
+      x,
+      y,
+      width: barWidth,
+      height: Math.max(height, 4),
+      date: row.date,
+      minutes: row.minutes,
+      startTime: row.startTime,
+      endTime: row.endTime
+    });
+
+    ctx.fillStyle = '#6a5e54';
+    ctx.font = '11px Space Grotesk';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(formatTinyDate(row.date), x + barWidth / 2, h - 10);
+  });
+
+  bindDurationChartHover(canvas, hitboxes, options.readoutEl);
 }
 
 function renderWeekCharts(all) {
@@ -2896,9 +3095,8 @@ function drawBodyweightChart(canvas, points) {
   });
 }
 
-function renderBodyweightTrend(all) {
-  if (!bodyweightChart) return;
-  const points = Object.entries(all)
+function getBodyweightPoints(all) {
+  return Object.entries(all)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, day]) => {
       const raw = day?.bodyweight;
@@ -2908,11 +3106,35 @@ function renderBodyweightTrend(all) {
       return { date, weight };
     })
     .filter(Boolean);
+}
 
+function getDurationRows(all, dates = null) {
+  const entries = dates
+    ? dates.map(date => [date, all[date] || {}])
+    : Object.entries(all).sort(([a], [b]) => a.localeCompare(b));
+
+  return entries.map(([date, day]) => ({
+    date,
+    startTime: day?.startTime || '',
+    endTime: day?.endTime || '',
+    minutes: computeTrainingDurationMinutes(day)
+  }));
+}
+
+function renderBodyweightTrend(all) {
+  if (!bodyweightChart) return;
+  const points = getBodyweightPoints(all);
   drawBodyweightChart(bodyweightChart, points);
   if (bodyweightHint) {
     bodyweightHint.style.display = points.length ? 'none' : 'block';
   }
+}
+
+function renderTrainingDurationTrend(all) {
+  if (!durationChart) return;
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
+  const rows = getDurationRows(all, dates);
+  drawDurationBarChart(durationChart, rows, { readoutEl: durationReadout });
 }
 
 function setVisionStatus(message) {
@@ -3421,12 +3643,25 @@ function buildSpreadsheetXml(sheets) {
  xmlns:html="http://www.w3.org/TR/REC-html40">${worksheetXml}</Workbook>`;
 }
 
+function downloadWorkbookXml(filename, sheets) {
+  const xml = buildSpreadsheetXml(sheets);
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function exportCurrentDayExcel() {
   const day = cloneState();
   const rows = [[
     'Datum',
     'Sessie',
     'Lichaamsgewicht (kg)',
+    'Starttijd',
+    'Eindtijd',
+    'Trainingsduur (min)',
     'Oefeningen',
     'Sets',
     'Totaal volume (kg)'
@@ -3434,6 +3669,9 @@ function exportCurrentDayExcel() {
     state.date,
     day.sessionName || '',
     day.bodyweight === '' ? '' : Number(day.bodyweight) || day.bodyweight,
+    day.startTime || '',
+    day.endTime || '',
+    computeTrainingDurationMinutes(day),
     day.exercises.length,
     day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).length, 0),
     day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).reduce((setSum, set) => setSum + setVolume(set, exercise), 0), 0)
@@ -3448,6 +3686,8 @@ function exportCurrentDayExcel() {
     'Notities',
     'Set',
     'Modus',
+    'Starttijd',
+    'Eindtijd',
     'Reps',
     'Gewicht',
     'Reps links',
@@ -3474,6 +3714,8 @@ function exportCurrentDayExcel() {
         exercise.notes || '',
         index + 1,
         splitMode ? 'Alternating' : 'Standaard',
+        day.startTime || '',
+        day.endTime || '',
         splitMode ? '' : (repData.reps ?? ''),
         splitMode ? '' : (weightData.weight ?? ''),
         splitMode ? (repData.left ?? '') : '',
@@ -3487,16 +3729,101 @@ function exportCurrentDayExcel() {
     });
   });
 
-  const xml = buildSpreadsheetXml([
+  downloadWorkbookXml(`fitness-logboek-${state.date || todayISO()}.xls`, [
     { name: 'Samenvatting', rows },
     { name: 'Sets', rows: setRows }
   ]);
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `fitness-logboek-${state.date || todayISO()}.xls`;
-  link.click();
-  URL.revokeObjectURL(link.href);
+}
+
+function getCurrentAllData() {
+  const all = loadAll();
+  all[state.date] = cloneState();
+  return all;
+}
+
+function exportWeekPrimaryData() {
+  const all = getCurrentAllData();
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
+  const { primaryTotals } = computeWeekTotals(all, dates);
+  const groups = PRIMARY_GROUPS.filter(group => primaryTotals[group].some(value => value > 0));
+  const visibleGroups = selectedPrimaryChartGroup ? [selectedPrimaryChartGroup] : groups;
+  const rows = [['Datum', 'Primary muscle', 'Totaal volume (kg)']];
+
+  dates.forEach((date, index) => {
+    visibleGroups.forEach(group => {
+      const volume = primaryTotals[group]?.[index] || 0;
+      if (!volume) return;
+      rows.push([date, group, volume]);
+    });
+  });
+
+  downloadWorkbookXml(`weekvolume-primair-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xls`, [
+    { name: 'Weekvolume primair', rows }
+  ]);
+}
+
+function exportWeekSecondaryData() {
+  const all = getCurrentAllData();
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
+  const { secondaryTotals } = computeWeekTotals(all, dates);
+  const groups = PRIMARY_GROUPS.filter(group => secondaryTotals[group].some(value => value > 0));
+  const visibleGroups = selectedSecondaryChartGroup ? [selectedSecondaryChartGroup] : groups;
+  const rows = [['Datum', 'Secondary muscle', 'Totaal volume (kg)']];
+
+  dates.forEach((date, index) => {
+    visibleGroups.forEach(group => {
+      const volume = secondaryTotals[group]?.[index] || 0;
+      if (!volume) return;
+      rows.push([date, group, volume]);
+    });
+  });
+
+  downloadWorkbookXml(`weekvolume-secundair-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xls`, [
+    { name: 'Weekvolume secundair', rows }
+  ]);
+}
+
+function exportDurationData() {
+  const all = getCurrentAllData();
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
+  const rows = [['Datum', 'Starttijd', 'Eindtijd', 'Trainingsduur (min)']];
+  getDurationRows(all, dates).forEach(row => {
+    rows.push([row.date, row.startTime || '', row.endTime || '', row.minutes]);
+  });
+
+  downloadWorkbookXml(`trainingsduur-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xls`, [
+    { name: 'Trainingsduur', rows }
+  ]);
+}
+
+function exportFocusData() {
+  const all = getCurrentAllData();
+  const selectedName = (focusExerciseName || '').trim() || (state.exercises.find(ex => ex.id === activeExerciseId)?.name || '').trim();
+  if (!selectedName) {
+    alert('Kies eerst een oefening op het dashboard.');
+    return;
+  }
+
+  const { rows: progressRows } = buildExerciseProgress(selectedName, all);
+  const rows = [['Datum', 'Oefening', 'Totaal volume (kg)', 'Sets x reps x gewicht']];
+  progressRows.forEach(row => {
+    rows.push([row.date, selectedName, row.volume, row.setsDetail || '-']);
+  });
+
+  downloadWorkbookXml(`oefening-focus-${selectedName.toLowerCase().replace(/[^a-z0-9]+/gi, '-') || 'oefening'}.xls`, [
+    { name: 'Oefening focus', rows }
+  ]);
+}
+
+function exportBodyweightData() {
+  const rows = [['Datum', 'Lichaamsgewicht (kg)']];
+  getBodyweightPoints(getCurrentAllData()).forEach(point => {
+    rows.push([point.date, point.weight]);
+  });
+
+  downloadWorkbookXml('lichaamsgewicht-trend.xls', [
+    { name: 'Lichaamsgewicht', rows }
+  ]);
 }
 
 function exportData() {
@@ -4050,6 +4377,8 @@ function mergeCurrentLocalDayIntoAll(all, options = {}) {
   all[state.date] = {
     sessionName: localDay.sessionName || '',
     bodyweight: localDay.bodyweight ?? '',
+    startTime: localDay.startTime || '',
+    endTime: localDay.endTime || '',
     updatedAt: localUpdatedAt,
     exercises: localDay.exercises
   };
@@ -4197,6 +4526,20 @@ bodyweightInput.addEventListener('input', () => {
   persist();
 });
 
+if (startTimeInput) {
+  startTimeInput.addEventListener('input', () => {
+    state.startTime = startTimeInput.value;
+    persist();
+  });
+}
+
+if (endTimeInput) {
+  endTimeInput.addEventListener('input', () => {
+    state.endTime = endTimeInput.value;
+    persist();
+  });
+}
+
 if (routineSourceDaySelect) {
   routineSourceDaySelect.addEventListener('change', () => {
     updateRoutineApplyButton();
@@ -4229,6 +4572,12 @@ if (dashboardWeekNowBtn) {
     setSelectedDashboardWeek(formatWeekInputValue(todayISO()));
   });
 }
+
+if (exportWeekPrimaryBtn) exportWeekPrimaryBtn.addEventListener('click', exportWeekPrimaryData);
+if (exportWeekSecondaryBtn) exportWeekSecondaryBtn.addEventListener('click', exportWeekSecondaryData);
+if (exportDurationBtn) exportDurationBtn.addEventListener('click', exportDurationData);
+if (exportFocusBtn) exportFocusBtn.addEventListener('click', exportFocusData);
+if (exportBodyweightBtn) exportBodyweightBtn.addEventListener('click', exportBodyweightData);
 
 if (progressDateInput) {
   progressDateInput.addEventListener('change', () => {
