@@ -3617,35 +3617,258 @@ function escapeSpreadsheetXml(value) {
     .replace(/'/g, '&apos;');
 }
 
-function createSpreadsheetCell(value) {
-  if (value === null || value === undefined || value === '') {
-    return '<Cell><Data ss:Type="String"></Data></Cell>';
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const textEncoder = new TextEncoder();
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let crc = i;
+    for (let j = 0; j < 8; j += 1) {
+      crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1);
+    }
+    table[i] = crc >>> 0;
   }
-  const isNumber = typeof value === 'number' && Number.isFinite(value);
-  const type = isNumber ? 'Number' : 'String';
-  return `<Cell><Data ss:Type="${type}">${escapeSpreadsheetXml(value)}</Data></Cell>`;
+  return table;
+})();
+
+function encodeUtf8(value) {
+  return textEncoder.encode(String(value));
 }
 
-function buildSpreadsheetXml(sheets) {
-  const worksheetXml = sheets.map(sheet => {
-    const rowsXml = (sheet.rows || []).map(row =>
-      `<Row>${row.map(cell => createSpreadsheetCell(cell)).join('')}</Row>`
-    ).join('');
-    return `<Worksheet ss:Name="${escapeSpreadsheetXml(sheet.name)}"><Table>${rowsXml}</Table></Worksheet>`;
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function getZipDosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    time: ((date.getHours() & 0x1f) << 11) | ((date.getMinutes() & 0x3f) << 5) | Math.floor(date.getSeconds() / 2),
+    date: (((year - 1980) & 0x7f) << 9) | (((date.getMonth() + 1) & 0x0f) << 5) | (date.getDate() & 0x1f)
+  };
+}
+
+function toSpreadsheetColumnName(index) {
+  let column = '';
+  let current = index + 1;
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    column = String.fromCharCode(65 + remainder) + column;
+    current = Math.floor((current - 1) / 26);
+  }
+  return column;
+}
+
+function sanitizeSheetNames(sheets) {
+  const used = new Set();
+  return sheets.map((sheet, index) => {
+    const base = String(sheet?.name || `Sheet ${index + 1}`)
+      .replace(/[\\/*?:[\]]/g, ' ')
+      .trim() || `Sheet ${index + 1}`;
+    let candidate = base.slice(0, 31);
+    let suffix = 2;
+    while (used.has(candidate)) {
+      const token = ` ${suffix}`;
+      candidate = `${base.slice(0, Math.max(1, 31 - token.length))}${token}`;
+      suffix += 1;
+    }
+    used.add(candidate);
+    return {
+      name: candidate,
+      rows: Array.isArray(sheet?.rows) ? sheet.rows : []
+    };
+  });
+}
+
+function createXlsxCell(value, rowIndex, cellIndex) {
+  const ref = `${toSpreadsheetColumnName(cellIndex)}${rowIndex + 1}`;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `<c r="${ref}"><v>${value}</v></c>`;
+  }
+  const text = value === null || value === undefined ? '' : String(value);
+  const preserve = /^\s|\s$/.test(text) ? ' xml:space="preserve"' : '';
+  return `<c r="${ref}" t="inlineStr"><is><t${preserve}>${escapeSpreadsheetXml(text)}</t></is></c>`;
+}
+
+function buildWorksheetXml(rows) {
+  const sheetRows = (rows || []).map((row, rowIndex) => {
+    const cells = (row || []).map((cell, cellIndex) => createXlsxCell(cell, rowIndex, cellIndex)).join('');
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
   }).join('');
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">${worksheetXml}</Workbook>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${sheetRows}</sheetData>
+</worksheet>`;
+}
+
+function buildWorkbookFiles(sheets) {
+  const safeSheets = sanitizeSheetNames(sheets);
+  const workbookSheets = safeSheets.map((sheet, index) =>
+    `<sheet name="${escapeSpreadsheetXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+  ).join('');
+  const workbookRels = safeSheets.map((_, index) =>
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+  ).join('');
+  const worksheetOverrides = safeSheets.map((_, index) =>
+    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+  ).join('');
+
+  const files = [
+    {
+      name: '[Content_Types].xml',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  ${worksheetOverrides}
+</Types>`
+    },
+    {
+      name: '_rels/.rels',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`
+    },
+    {
+      name: 'docProps/core.xml',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:creator>Fitness Daglog</dc:creator>
+  <cp:lastModifiedBy>Fitness Daglog</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:modified>
+</cp:coreProperties>`
+    },
+    {
+      name: 'docProps/app.xml',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>Fitness Daglog</Application>
+  <TitlesOfParts>
+    <vt:vector size="${safeSheets.length}" baseType="lpstr">${safeSheets.map(sheet => `<vt:lpstr>${escapeSpreadsheetXml(sheet.name)}</vt:lpstr>`).join('')}</vt:vector>
+  </TitlesOfParts>
+</Properties>`
+    },
+    {
+      name: 'xl/workbook.xml',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${workbookSheets}</sheets>
+</workbook>`
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${workbookRels}
+  <Relationship Id="rId${safeSheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`
+    },
+    {
+      name: 'xl/styles.xml',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><sz val="11"/><name val="Aptos"/></font></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`
+    }
+  ];
+
+  safeSheets.forEach((sheet, index) => {
+    files.push({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      data: buildWorksheetXml(sheet.rows)
+    });
+  });
+
+  return files;
+}
+
+function createZipBlob(files) {
+  const fileEntries = files.map(file => ({
+    nameBytes: encodeUtf8(file.name),
+    dataBytes: typeof file.data === 'string' ? encodeUtf8(file.data) : file.data
+  }));
+  const parts = [];
+  const centralDirectory = [];
+  let offset = 0;
+  const timestamp = getZipDosDateTime();
+
+  fileEntries.forEach(file => {
+    const crc = crc32(file.dataBytes);
+    const localHeader = new Uint8Array(30 + file.nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, timestamp.time, true);
+    localView.setUint16(12, timestamp.date, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, file.dataBytes.length, true);
+    localView.setUint32(22, file.dataBytes.length, true);
+    localView.setUint16(26, file.nameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    localHeader.set(file.nameBytes, 30);
+    parts.push(localHeader, file.dataBytes);
+
+    const centralHeader = new Uint8Array(46 + file.nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, timestamp.time, true);
+    centralView.setUint16(14, timestamp.date, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, file.dataBytes.length, true);
+    centralView.setUint32(24, file.dataBytes.length, true);
+    centralView.setUint16(28, file.nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, offset, true);
+    centralHeader.set(file.nameBytes, 46);
+    centralDirectory.push(centralHeader);
+
+    offset += localHeader.length + file.dataBytes.length;
+  });
+
+  const centralSize = centralDirectory.reduce((sum, entry) => sum + entry.length, 0);
+  const endRecord = new Uint8Array(22);
+  const endView = new DataView(endRecord.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(4, 0, true);
+  endView.setUint16(6, 0, true);
+  endView.setUint16(8, fileEntries.length, true);
+  endView.setUint16(10, fileEntries.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+  endView.setUint16(20, 0, true);
+
+  return new Blob([...parts, ...centralDirectory, endRecord], { type: XLSX_MIME });
 }
 
 function downloadWorkbookXml(filename, sheets) {
-  const xml = buildSpreadsheetXml(sheets);
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const blob = createZipBlob(buildWorkbookFiles(sheets));
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;
@@ -3729,7 +3952,7 @@ function exportCurrentDayExcel() {
     });
   });
 
-  downloadWorkbookXml(`fitness-logboek-${state.date || todayISO()}.xls`, [
+  downloadWorkbookXml(`fitness-logboek-${state.date || todayISO()}.xlsx`, [
     { name: 'Samenvatting', rows },
     { name: 'Sets', rows: setRows }
   ]);
@@ -3757,7 +3980,7 @@ function exportWeekPrimaryData() {
     });
   });
 
-  downloadWorkbookXml(`weekvolume-primair-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xls`, [
+  downloadWorkbookXml(`weekvolume-primair-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xlsx`, [
     { name: 'Weekvolume primair', rows }
   ]);
 }
@@ -3778,7 +4001,7 @@ function exportWeekSecondaryData() {
     });
   });
 
-  downloadWorkbookXml(`weekvolume-secundair-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xls`, [
+  downloadWorkbookXml(`weekvolume-secundair-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xlsx`, [
     { name: 'Weekvolume secundair', rows }
   ]);
 }
@@ -3791,7 +4014,7 @@ function exportDurationData() {
     rows.push([row.date, row.startTime || '', row.endTime || '', row.minutes]);
   });
 
-  downloadWorkbookXml(`trainingsduur-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xls`, [
+  downloadWorkbookXml(`trainingsduur-${selectedDashboardWeek || formatWeekInputValue(todayISO())}.xlsx`, [
     { name: 'Trainingsduur', rows }
   ]);
 }
@@ -3810,7 +4033,7 @@ function exportFocusData() {
     rows.push([row.date, selectedName, row.volume, row.setsDetail || '-']);
   });
 
-  downloadWorkbookXml(`oefening-focus-${selectedName.toLowerCase().replace(/[^a-z0-9]+/gi, '-') || 'oefening'}.xls`, [
+  downloadWorkbookXml(`oefening-focus-${selectedName.toLowerCase().replace(/[^a-z0-9]+/gi, '-') || 'oefening'}.xlsx`, [
     { name: 'Oefening focus', rows }
   ]);
 }
@@ -3821,7 +4044,7 @@ function exportBodyweightData() {
     rows.push([point.date, point.weight]);
   });
 
-  downloadWorkbookXml('lichaamsgewicht-trend.xls', [
+  downloadWorkbookXml('lichaamsgewicht-trend.xlsx', [
     { name: 'Lichaamsgewicht', rows }
   ]);
 }
