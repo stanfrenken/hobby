@@ -7,6 +7,7 @@ const UI_PAGE_KEY = 'fitnessLog.uiPage.v1';
 const ROUTINE_UI_KEY = 'fitnessLog.routineDay.v1';
 const ROUTINE_OPTION_UI_KEY = 'fitnessLog.routineOption.v1';
 const DASHBOARD_WEEK_KEY = 'fitnessLog.dashboardWeek.v1';
+const VISIT_GRANULARITY_KEY = 'fitnessLog.visitGranularity.v1';
 const PROGRESS_ENTRIES_KEY = 'fitnessLog.progressEntries.v1';
 const VISION_SETTINGS_KEY = 'fitnessLog.visionSettings.v1';
 
@@ -42,14 +43,17 @@ const primarySummary = document.getElementById('primarySummary');
 const weekPrimaryChart = document.getElementById('weekPrimaryChart');
 const weekSecondaryChart = document.getElementById('weekSecondaryChart');
 const durationChart = document.getElementById('durationChart');
+const visitCountChart = document.getElementById('visitCountChart');
 const weekPrimaryReadout = document.getElementById('weekPrimaryReadout');
 const weekSecondaryReadout = document.getElementById('weekSecondaryReadout');
 const durationReadout = document.getElementById('durationReadout');
+const visitCountReadout = document.getElementById('visitCountReadout');
 const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
 const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
 const dashboardWeekInput = document.getElementById('dashboardWeek');
 const dashboardWeekNowBtn = document.getElementById('dashboardWeekNow');
 const dashboardWeekLabel = document.getElementById('dashboardWeekLabel');
+const visitCountGranularitySelect = document.getElementById('visitCountGranularity');
 const focusName = document.getElementById('focusName');
 const focusExerciseSelect = document.getElementById('focusExerciseSelect');
 const focusChart = document.getElementById('focusChart');
@@ -1698,6 +1702,25 @@ function formatTrainingWindow(startTime, endTime) {
   return `${start} - ${end}`;
 }
 
+function hasMeaningfulSetData(set) {
+  if (!set || typeof set !== 'object') return false;
+  return [
+    set.reps,
+    set.leftReps,
+    set.rightReps,
+    set.weight,
+    set.leftWeight,
+    set.rightWeight,
+    set.rpe
+  ].some(value => String(value ?? '').trim() !== '') || !!set.done;
+}
+
+function isWorkoutDay(day) {
+  if (!day || typeof day !== 'object') return false;
+  if (String(day.startTime || '').trim() || String(day.endTime || '').trim()) return true;
+  return (day.exercises || []).some(exercise => (exercise.sets || []).some(hasMeaningfulSetData));
+}
+
 function handleInputChange(target) {
   const card = target.closest('.exercise-card');
   if (!card) return;
@@ -1825,6 +1848,7 @@ function refreshProgress() {
   renderExerciseFocus(all);
   renderBodyweightTrend(all);
   renderTrainingDurationTrend(all);
+  renderVisitCountTrend(all);
 }
 
 function collectExerciseNames(all) {
@@ -2286,6 +2310,11 @@ function getStoredDashboardWeek() {
   return formatWeekInputValue(state.date || todayISO());
 }
 
+function getStoredVisitGranularity() {
+  const stored = String(localStorage.getItem(VISIT_GRANULARITY_KEY) || '').trim().toLowerCase();
+  return ['day', 'week', 'month', 'year'].includes(stored) ? stored : 'week';
+}
+
 function updateDashboardWeekLabel() {
   if (!dashboardWeekLabel) return;
   const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
@@ -2299,6 +2328,15 @@ function setSelectedDashboardWeek(value, options = {}) {
   if (dashboardWeekInput) dashboardWeekInput.value = selectedDashboardWeek;
   if (!options.skipPersist) localStorage.setItem(DASHBOARD_WEEK_KEY, selectedDashboardWeek);
   updateDashboardWeekLabel();
+  if (!options.skipRefresh) refreshProgress();
+}
+
+function setSelectedVisitGranularity(value, options = {}) {
+  selectedVisitGranularity = ['day', 'week', 'month', 'year'].includes(String(value || '').toLowerCase())
+    ? String(value).toLowerCase()
+    : 'week';
+  if (visitCountGranularitySelect) visitCountGranularitySelect.value = selectedVisitGranularity;
+  if (!options.skipPersist) localStorage.setItem(VISIT_GRANULARITY_KEY, selectedVisitGranularity);
   if (!options.skipRefresh) refreshProgress();
 }
 
@@ -2570,6 +2608,103 @@ function bindDurationChartHover(canvas, hitboxes, readoutEl) {
   canvas.addEventListener('touchend', leaveHandler, { passive: true });
 }
 
+function formatVisitPeriodLabel(row) {
+  if (!row) return '-';
+  if (row.granularity === 'day') return formatLongDate(row.date);
+  if (row.granularity === 'week') return `Week ${row.code.slice(-2)} (${formatShortDate(row.startDate)} t/m ${formatShortDate(row.endDate)})`;
+  if (row.granularity === 'month') {
+    return new Intl.DateTimeFormat('nl-NL', {
+      month: 'long',
+      year: 'numeric'
+    }).format(parseDate(row.startDate) || new Date());
+  }
+  return row.label;
+}
+
+function getVisitAxisLabel(row) {
+  if (!row) return '-';
+  if (row.granularity === 'day') return formatAxisDate(row.date);
+  if (row.granularity === 'week') return `W${row.code.slice(-2)}`;
+  if (row.granularity === 'month') {
+    return new Intl.DateTimeFormat('nl-NL', {
+      month: 'short',
+      year: '2-digit'
+    }).format(parseDate(row.startDate) || new Date());
+  }
+  return row.label;
+}
+
+function getCountAxisScale(maxValue) {
+  const safeValue = Math.max(Number(maxValue) || 0, 1);
+  const stepChoices = [1, 2, 5, 10, 20, 25, 50, 100];
+  const roughStep = safeValue / 4;
+  const step = stepChoices.find(choice => roughStep <= choice) || Math.ceil(roughStep);
+  const max = Math.ceil(safeValue / step) * step;
+  return {
+    max,
+    step,
+    ticks: Math.max(1, Math.round(max / step))
+  };
+}
+
+function updateVisitCountReadout(readoutEl, hit) {
+  if (!readoutEl) return;
+  if (!hit) {
+    readoutEl.textContent = 'Beweeg over de chart voor details.';
+    return;
+  }
+  readoutEl.textContent = `${formatVisitPeriodLabel(hit)} • ${hit.count}x fitness`;
+}
+
+function bindVisitCountChartHover(canvas, hitboxes, readoutEl) {
+  if (!canvas) return;
+  canvas._visitHitboxes = hitboxes;
+  canvas._visitReadout = readoutEl || null;
+  canvas.classList.toggle('chart-hover', hitboxes.length > 0);
+  updateVisitCountReadout(canvas._visitReadout, null);
+
+  if (canvas._visitHoverBound) return;
+  canvas._visitHoverBound = true;
+
+  const moveHandler = event => {
+    const position = getCanvasPointer(canvas, event);
+    if (!position) return false;
+
+    const hit = (canvas._visitHitboxes || []).find(box =>
+      position.x >= box.x && position.x <= box.x + box.width && position.y >= box.y && position.y <= box.y + box.height
+    );
+
+    if (!hit) {
+      hideChartTooltip();
+      updateVisitCountReadout(canvas._visitReadout, null);
+      return false;
+    }
+
+    updateVisitCountReadout(canvas._visitReadout, hit);
+    showChartTooltip(
+      `<span class="title">${formatVisitPeriodLabel(hit)}</span><span class="value">${hit.count}x fitness</span>`,
+      position.clientX,
+      position.clientY
+    );
+    return true;
+  };
+
+  canvas.addEventListener('pointermove', moveHandler);
+  canvas.addEventListener('mousemove', moveHandler);
+  canvas.addEventListener('pointerdown', moveHandler);
+  canvas.addEventListener('touchstart', moveHandler, { passive: true });
+  canvas.addEventListener('touchmove', moveHandler, { passive: true });
+
+  const leaveHandler = () => {
+    hideChartTooltip();
+    updateVisitCountReadout(canvas._visitReadout, null);
+  };
+
+  canvas.addEventListener('mouseleave', leaveHandler);
+  canvas.addEventListener('pointerleave', leaveHandler);
+  canvas.addEventListener('touchend', leaveHandler, { passive: true });
+}
+
 function drawStackedBarChart(canvas, dates, totals, options = {}) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -2763,6 +2898,199 @@ function drawDurationBarChart(canvas, rows, options = {}) {
   bindDurationChartHover(canvas, hitboxes, options.readoutEl);
 }
 
+function drawVisitCountBarChart(canvas, rows, options = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const paddingLeft = 64;
+  const paddingRight = 14;
+  const paddingTop = 14;
+  const paddingBottom = 30;
+  const hitboxes = [];
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+
+  const hasData = rows.some(row => row.count > 0);
+  if (!rows.length || !hasData) {
+    ctx.fillStyle = '#6a5e54';
+    ctx.font = '14px Space Grotesk';
+    ctx.fillText('Nog geen fitnessbezoeken gevonden.', 14, h / 2);
+    bindVisitCountChartHover(canvas, [], options.readoutEl);
+    return;
+  }
+
+  const axis = getCountAxisScale(Math.max(...rows.map(row => row.count), 1));
+  const chartHeight = h - paddingTop - paddingBottom;
+  const chartWidth = w - paddingLeft - paddingRight;
+  const barGap = rows.length > 40 ? 0 : rows.length > 18 ? 2 : 8;
+  const barWidth = rows.length > 1
+    ? Math.max(0.5, (chartWidth - barGap * (rows.length - 1)) / rows.length)
+    : Math.min(56, chartWidth);
+
+  ctx.strokeStyle = 'rgba(26,26,26,0.16)';
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.moveTo(paddingLeft, paddingTop);
+  ctx.lineTo(paddingLeft, h - paddingBottom);
+  ctx.lineTo(w - paddingRight, h - paddingBottom);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(18, h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = '700 12px Space Grotesk';
+  ctx.textAlign = 'center';
+  ctx.fillText('bezoeken', 0, 0);
+  ctx.restore();
+
+  for (let tick = 0; tick <= axis.ticks; tick += 1) {
+    const value = tick * axis.step;
+    const y = h - paddingBottom - (value / axis.max) * chartHeight;
+    ctx.strokeStyle = 'rgba(26,26,26,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(w - paddingRight, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = '600 11px Space Grotesk';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(value), paddingLeft - 6, y);
+  }
+
+  const labelStep = Math.max(1, Math.ceil(rows.length / 6));
+  rows.forEach((row, index) => {
+    const x = paddingLeft + index * (barWidth + barGap);
+    const height = axis.max ? (row.count / axis.max) * chartHeight : 0;
+    const y = h - paddingBottom - height;
+    ctx.fillStyle = '#c2552d';
+    ctx.fillRect(x, y, barWidth, height);
+    hitboxes.push({
+      ...row,
+      x,
+      y: height > 0 ? y : h - paddingBottom - 4,
+      width: barWidth,
+      height: Math.max(height, 4)
+    });
+
+    if (index % labelStep === 0 || index === rows.length - 1) {
+      ctx.fillStyle = '#6a5e54';
+      ctx.font = '11px Space Grotesk';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(getVisitAxisLabel(row), x + barWidth / 2, h - 10);
+    }
+  });
+
+  bindVisitCountChartHover(canvas, hitboxes, options.readoutEl);
+}
+
+function getMonthStartDate(value) {
+  const base = parseDate(value) || new Date();
+  return new Date(base.getFullYear(), base.getMonth(), 1);
+}
+
+function getYearStartDate(value) {
+  const base = parseDate(value) || new Date();
+  return new Date(base.getFullYear(), 0, 1);
+}
+
+function buildVisitCountRows(all, granularity = 'week') {
+  const workoutDates = Object.entries(all)
+    .filter(([, day]) => isWorkoutDay(day))
+    .map(([date]) => date)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (!workoutDates.length) return [];
+
+  const workoutSet = new Set(workoutDates);
+  const first = workoutDates[0];
+  const last = workoutDates[workoutDates.length - 1];
+  const rows = [];
+
+  if (granularity === 'day') {
+    for (let cursor = parseDate(first); cursor && cursor <= parseDate(last); cursor.setDate(cursor.getDate() + 1)) {
+      const date = toIsoDateString(cursor);
+      rows.push({
+        granularity: 'day',
+        date,
+        startDate: date,
+        endDate: date,
+        label: formatLongDate(date),
+        count: workoutSet.has(date) ? 1 : 0
+      });
+    }
+    return rows;
+  }
+
+  if (granularity === 'week') {
+    for (let cursor = getWeekStartDate(first); cursor <= getWeekStartDate(last); cursor.setDate(cursor.getDate() + 7)) {
+      const startDate = toIsoDateString(cursor);
+      const dates = Array.from({ length: 7 }, (_, index) => {
+        const next = new Date(cursor);
+        next.setDate(cursor.getDate() + index);
+        return toIsoDateString(next);
+      });
+      const endDate = dates[dates.length - 1];
+      rows.push({
+        granularity: 'week',
+        code: formatWeekInputValue(startDate),
+        startDate,
+        endDate,
+        label: `Week ${formatWeekInputValue(startDate).slice(-2)}`,
+        count: dates.reduce((sum, date) => sum + (workoutSet.has(date) ? 1 : 0), 0)
+      });
+    }
+    return rows;
+  }
+
+  if (granularity === 'month') {
+    for (let cursor = getMonthStartDate(first); cursor <= getMonthStartDate(last); cursor.setMonth(cursor.getMonth() + 1)) {
+      const startDate = toIsoDateString(cursor);
+      const endDate = toIsoDateString(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0));
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth();
+      const count = workoutDates.filter(date => {
+        const parsed = parseDate(date);
+        return parsed && parsed.getFullYear() === year && parsed.getMonth() === month;
+      }).length;
+      rows.push({
+        granularity: 'month',
+        startDate,
+        endDate,
+        label: new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric' }).format(cursor),
+        count
+      });
+    }
+    return rows;
+  }
+
+  for (let cursor = getYearStartDate(first); cursor <= getYearStartDate(last); cursor.setFullYear(cursor.getFullYear() + 1)) {
+    const startDate = toIsoDateString(cursor);
+    const endDate = toIsoDateString(new Date(cursor.getFullYear(), 11, 31));
+    const year = cursor.getFullYear();
+    const count = workoutDates.filter(date => {
+      const parsed = parseDate(date);
+      return parsed && parsed.getFullYear() === year;
+    }).length;
+    rows.push({
+      granularity: 'year',
+      startDate,
+      endDate,
+      label: String(year),
+      count
+    });
+  }
+
+  return rows;
+}
+
 function renderWeekCharts(all) {
   const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
   const { primaryTotals, secondaryTotals } = computeWeekTotals(all, dates);
@@ -2833,6 +3161,7 @@ let selectedRoutineOptionId = '';
 let selectedDashboardWeek = '';
 let selectedPrimaryChartGroup = '';
 let selectedSecondaryChartGroup = '';
+let selectedVisitGranularity = 'week';
 let progressDraftImage = '';
 
 function ensureActiveExercise() {
@@ -3135,6 +3464,12 @@ function renderTrainingDurationTrend(all) {
   const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
   const rows = getDurationRows(all, dates);
   drawDurationBarChart(durationChart, rows, { readoutEl: durationReadout });
+}
+
+function renderVisitCountTrend(all) {
+  if (!visitCountChart) return;
+  const rows = buildVisitCountRows(all, selectedVisitGranularity || getStoredVisitGranularity());
+  drawVisitCountBarChart(visitCountChart, rows, { readoutEl: visitCountReadout });
 }
 
 function setVisionStatus(message) {
@@ -4781,6 +5116,12 @@ if (dashboardWeekInput) {
   });
 }
 
+if (visitCountGranularitySelect) {
+  visitCountGranularitySelect.addEventListener('change', () => {
+    setSelectedVisitGranularity(visitCountGranularitySelect.value);
+  });
+}
+
 [weekPrimaryLegend, weekSecondaryLegend].forEach(legend => {
   if (!legend) return;
   legend.addEventListener('click', event => {
@@ -5094,10 +5435,12 @@ function init() {
   setActivePage(getPreferredPage(), { skipScroll: true });
   selectedRoutineDay = getStoredRoutineDay();
   selectedDashboardWeek = getStoredDashboardWeek();
+  selectedVisitGranularity = getStoredVisitGranularity();
   const today = todayISO();
   dateInput.value = today;
   loadDay(today);
   setSelectedDashboardWeek(selectedDashboardWeek, { skipRefresh: true, skipPersist: true });
+  setSelectedVisitGranularity(selectedVisitGranularity, { skipRefresh: true, skipPersist: true });
   loadVisionSettingsIntoForm();
   fillProgressDraft(today);
   renderExercises();

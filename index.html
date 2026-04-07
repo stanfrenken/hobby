@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260406c" />
+  <link rel="stylesheet" href="styles.css?v=20260407a" />
 </head>
 <body>
   <div class="bg"></div>
@@ -175,7 +175,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel panel-wide">
             <div class="panel-header">
               <h2>Oefening focus</h2>
               <div class="mini-actions">
@@ -198,19 +198,6 @@
 
           <section class="panel">
             <div class="panel-header">
-              <h2>Lichaamsgewicht</h2>
-              <div class="mini-actions">
-                <button id="exportBodyweightBtn" class="ghost small" type="button">Data</button>
-              </div>
-            </div>
-            <div class="progress">
-              <canvas id="bodyweightChart" width="360" height="190"></canvas>
-              <p id="bodyweightHint" class="hint">Vul per dag je gewicht in om je trend te zien.</p>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-header">
               <h2>Trainingsduur</h2>
               <div class="mini-actions">
                 <button id="exportDurationBtn" class="ghost small" type="button">Data</button>
@@ -219,6 +206,40 @@
             <div class="progress">
               <canvas id="durationChart" width="360" height="190"></canvas>
               <div id="durationReadout" class="chart-readout">Beweeg over de chart voor details.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Fitness bezoeken</h2>
+              <div class="mini-actions">
+                <label class="control inline-select">
+                  <span>Niveau</span>
+                  <select id="visitCountGranularity">
+                    <option value="day">Dag</option>
+                    <option value="week">Week</option>
+                    <option value="month">Maand</option>
+                    <option value="year">Jaar</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="progress">
+              <canvas id="visitCountChart" width="360" height="190"></canvas>
+              <div id="visitCountReadout" class="chart-readout">Beweeg over de chart voor details.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Lichaamsgewicht</h2>
+              <div class="mini-actions">
+                <button id="exportBodyweightBtn" class="ghost small" type="button">Data</button>
+              </div>
+            </div>
+            <div class="progress">
+              <canvas id="bodyweightChart" width="360" height="190"></canvas>
+              <p id="bodyweightHint" class="hint">Vul per dag je gewicht in om je trend te zien.</p>
             </div>
           </section>
 
@@ -500,7 +521,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260406d"></script>
+  <script src="app.js?v=20260407a"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>

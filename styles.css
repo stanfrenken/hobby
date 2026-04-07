@@ -368,8 +368,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   min-width: 220px;
 }
 
-.dashboard-grid > :nth-child(4),
-.dashboard-grid > :nth-child(6) {
+.dashboard-grid > .panel-wide {
   grid-column: span 2;
 }
 
@@ -394,6 +393,18 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.inline-select {
+  min-width: 112px;
+}
+
+.inline-select span {
+  font-size: 11px;
+}
+
+.inline-select select {
+  min-width: 112px;
 }
 
 .panel-header.spaced { margin-top: 18px; }
@@ -1159,8 +1170,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
-  .dashboard-grid > :nth-child(4),
-  .dashboard-grid > :nth-child(6) {
+  .dashboard-grid > .panel-wide {
     grid-column: auto;
   }
   .toolbar-row {
