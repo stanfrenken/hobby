@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260407a" />
+  <link rel="stylesheet" href="styles.css?v=20260413a" />
 </head>
 <body>
   <div class="bg"></div>
@@ -465,6 +465,53 @@
         </div>
         <button class="ghost small apply-quick-sets" type="button">Maak identieke sets</button>
       </div>
+      <div class="next-target-builder">
+        <div class="next-target-head">
+          <div>
+            <span class="label">Volgende keer</span>
+            <span class="sub">Bewaar hier alvast je target voor de volgende sessie.</span>
+          </div>
+          <button class="ghost small save-next-target" type="button">Bewaar target</button>
+        </div>
+        <div class="next-target-grid">
+          <label class="control target-control target-count-single">
+            <span>Sets</span>
+            <input class="next-target-count" type="number" min="1" step="1" placeholder="4" />
+          </label>
+          <label class="control target-control target-count-split">
+            <span>Sets links</span>
+            <input class="next-target-left-count" type="number" min="0" step="1" placeholder="4" />
+          </label>
+          <label class="control target-control target-count-split">
+            <span>Sets rechts</span>
+            <input class="next-target-right-count" type="number" min="0" step="1" placeholder="4" />
+          </label>
+          <label class="control target-control target-reps-single">
+            <span>Reps</span>
+            <input class="next-target-reps" type="number" min="0" step="1" placeholder="10" />
+          </label>
+          <label class="control target-control target-reps-split">
+            <span>Reps links</span>
+            <input class="next-target-left-reps" type="number" min="0" step="1" placeholder="10" />
+          </label>
+          <label class="control target-control target-reps-split">
+            <span>Reps rechts</span>
+            <input class="next-target-right-reps" type="number" min="0" step="1" placeholder="10" />
+          </label>
+          <label class="control target-control target-weight-single">
+            <span>Gewicht</span>
+            <input class="next-target-weight" type="number" min="0" step="0.5" placeholder="8" />
+          </label>
+          <label class="control target-control target-weight-split">
+            <span>Links</span>
+            <input class="next-target-left-weight" type="number" min="0" step="0.5" placeholder="8" />
+          </label>
+          <label class="control target-control target-weight-split">
+            <span>Rechts</span>
+            <input class="next-target-right-weight" type="number" min="0" step="0.5" placeholder="8" />
+          </label>
+        </div>
+      </div>
       <div class="sets">
         <div class="sets-head">
           <span>#</span>
@@ -521,7 +568,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260407a"></script>
+  <script src="app.js?v=20260413a"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>

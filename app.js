@@ -244,7 +244,8 @@ function loadCustomExerciseLibrary() {
       .map(item => normalizeExerciseProfile({
         name: item?.name,
         primary: item?.primary,
-        secondaryGroups: item?.secondaryGroups ?? item?.secondary
+        secondaryGroups: item?.secondaryGroups ?? item?.secondary,
+        nextTarget: item?.nextTarget
       }))
       .filter(item => item.name);
   } catch {
@@ -257,6 +258,16 @@ function saveCustomExerciseLibrary(items) {
     .map(item => normalizeExerciseProfile(item))
     .filter(item => item.name);
   localStorage.setItem(EXERCISE_LIBRARY_KEY, JSON.stringify(normalized));
+}
+
+function persistCustomExerciseLibrary(items) {
+  saveCustomExerciseLibrary(items);
+  syncState.dirty = true;
+  syncState.lastLocalChange = Date.now();
+  syncState.lastChangedDate = state.date;
+  syncState.lastChangedScope = 'meta';
+  scheduleAutoSync();
+  emitCloudChange('meta');
 }
 
 function normalizeProgressEntries(entries) {
@@ -749,6 +760,7 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
   const selectInput = card?.querySelector('.exercise-select');
   const primarySelect = card?.querySelector('.exercise-primary');
   const secondaryPicker = card?.querySelector('.exercise-secondary-picker');
+  const nextTarget = normalizeExerciseTarget(profile?.nextTarget);
 
   if (!profile) {
     exercise.primaryGroup = '';
@@ -756,12 +768,14 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
     if (selectInput) selectInput.value = '';
     if (primarySelect) primarySelect.value = 'Automatisch';
     renderSecondaryPicker(secondaryPicker, [], '', 'exercise-secondary');
+    renderNextTargetInputs(card, null);
     return;
   }
 
   exercise.name = profile.name;
   exercise.primaryGroup = profile.primary || '';
   exercise.secondaryGroups = normalizeSecondaryGroups(profile.secondaryGroups ?? profile.secondary, exercise.primaryGroup);
+  applyExerciseTargetIfNeeded(exercise, nextTarget);
 
   if (nameInput) nameInput.value = exercise.name;
   if (selectInput) {
@@ -770,6 +784,7 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
   }
   if (primarySelect) primarySelect.value = exercise.primaryGroup || 'Automatisch';
   renderSecondaryPicker(secondaryPicker, exercise.secondaryGroups, exercise.primaryGroup, 'exercise-secondary');
+  renderNextTargetInputs(card, nextTarget);
 }
 
 function populateExerciseSelect(select, catalog, currentName) {
@@ -806,14 +821,57 @@ function saveExerciseProfileToLibrary(exercise) {
   if (!profile) return false;
 
   const key = normalizeExerciseName(profile.name);
-  const library = loadCustomExerciseLibrary()
-    .filter(item => normalizeExerciseName(item.name) !== key);
+  const currentLibrary = loadCustomExerciseLibrary();
+  const existing = currentLibrary.find(item => normalizeExerciseName(item.name) === key);
+  if (existing?.nextTarget) {
+    profile.nextTarget = normalizeExerciseTarget(existing.nextTarget);
+  }
+  const library = currentLibrary.filter(item => normalizeExerciseName(item.name) !== key);
 
   library.push(profile);
   library.sort((a, b) => a.name.localeCompare(b.name, 'nl-NL'));
-  saveCustomExerciseLibrary(library);
-  emitCloudChange('meta');
+  persistCustomExerciseLibrary(library);
   return true;
+}
+
+function upsertExerciseLibraryProfile(profile) {
+  const normalized = normalizeExerciseProfile(profile);
+  if (!normalized.name) return false;
+  const key = normalizeExerciseName(normalized.name);
+  const library = loadCustomExerciseLibrary().filter(item => normalizeExerciseName(item.name) !== key);
+  library.push(normalized);
+  library.sort((a, b) => a.name.localeCompare(b.name, 'nl-NL'));
+  persistCustomExerciseLibrary(library);
+  return true;
+}
+
+function saveExerciseNextTarget(exercise, card) {
+  if (!exercise || !card) return { ok: false, message: 'Geen oefening gevonden.' };
+  const name = String(exercise.name || '').trim();
+  if (!name) return { ok: false, message: 'Geef eerst een naam aan je oefening.' };
+
+  const target = readNextTargetFromCard(card, !!exercise.splitWeightMode);
+  if (!hasExerciseTarget(target)) {
+    return { ok: false, message: 'Vul voor je volgende keer minstens sets en reps of gewicht in.' };
+  }
+
+  const baseProfile = getAutoExerciseProfile(name, getExerciseCatalog(getCurrentDataSnapshot())) || buildExerciseProfileFromExercise(exercise) || {
+    name,
+    primary: resolveExerciseMuscles(exercise).primary,
+    secondaryGroups: resolveExerciseMuscles(exercise).secondaryGroups
+  };
+
+  const saved = upsertExerciseLibraryProfile({
+    ...baseProfile,
+    name,
+    primary: resolveExerciseMuscles(exercise).primary,
+    secondaryGroups: resolveExerciseMuscles(exercise).secondaryGroups,
+    nextTarget: target
+  });
+
+  return saved
+    ? { ok: true, message: 'Target opgeslagen.' }
+    : { ok: false, message: 'Kon je target niet opslaan.' };
 }
 
 function hasInputValue(value) {
@@ -914,6 +972,83 @@ function syncExerciseSplitMode(exercise, splitMode) {
       if (!hasInputValue(set.reps)) set.reps = set.leftReps || set.rightReps || '';
     }
   });
+}
+
+function renderNextTargetInputs(card, target = null) {
+  if (!card) return;
+  const normalized = normalizeExerciseTarget(target);
+  const fieldMap = {
+    '.next-target-count': normalized.count,
+    '.next-target-left-count': normalized.leftCount,
+    '.next-target-right-count': normalized.rightCount,
+    '.next-target-reps': normalized.reps,
+    '.next-target-left-reps': normalized.leftReps,
+    '.next-target-right-reps': normalized.rightReps,
+    '.next-target-weight': normalized.weight,
+    '.next-target-left-weight': normalized.leftWeight,
+    '.next-target-right-weight': normalized.rightWeight
+  };
+
+  Object.entries(fieldMap).forEach(([selector, value]) => {
+    const input = card.querySelector(selector);
+    if (input) input.value = value ?? '';
+  });
+}
+
+function readNextTargetFromCard(card, splitMode) {
+  return normalizeExerciseTarget({
+    splitMode,
+    count: card.querySelector('.next-target-count')?.value ?? '',
+    leftCount: card.querySelector('.next-target-left-count')?.value ?? '',
+    rightCount: card.querySelector('.next-target-right-count')?.value ?? '',
+    reps: card.querySelector('.next-target-reps')?.value ?? '',
+    leftReps: card.querySelector('.next-target-left-reps')?.value ?? '',
+    rightReps: card.querySelector('.next-target-right-reps')?.value ?? '',
+    weight: card.querySelector('.next-target-weight')?.value ?? '',
+    leftWeight: card.querySelector('.next-target-left-weight')?.value ?? '',
+    rightWeight: card.querySelector('.next-target-right-weight')?.value ?? ''
+  });
+}
+
+function buildSetsFromExerciseTarget(target) {
+  const normalized = normalizeExerciseTarget(target);
+  if (!hasExerciseTarget(normalized)) return [];
+
+  if (normalized.splitMode) {
+    const leftCount = Number(normalized.leftCount || 0);
+    const rightCount = Number(normalized.rightCount || 0);
+    return Array.from({ length: Math.max(leftCount, rightCount) }, (_, index) => newSet({
+      leftReps: index < leftCount ? normalized.leftReps : '',
+      rightReps: index < rightCount ? normalized.rightReps : '',
+      leftWeight: index < leftCount ? normalized.leftWeight : '',
+      rightWeight: index < rightCount ? normalized.rightWeight : '',
+      weightMode: 'split'
+    }));
+  }
+
+  const count = Number(normalized.count || 0);
+  return Array.from({ length: count }, () => newSet({
+    reps: normalized.reps,
+    weight: normalized.weight,
+    weightMode: 'single'
+  }));
+}
+
+function shouldPrefillExerciseTarget(exercise) {
+  return !exercise
+    || !Array.isArray(exercise.sets)
+    || exercise.sets.length === 0
+    || (exercise.sets.length === 1 && isBlankSet(exercise.sets[0]));
+}
+
+function applyExerciseTargetIfNeeded(exercise, target) {
+  const normalized = normalizeExerciseTarget(target);
+  if (!exercise || !hasExerciseTarget(normalized) || !shouldPrefillExerciseTarget(exercise)) return false;
+  const generatedSets = buildSetsFromExerciseTarget(normalized);
+  if (!generatedSets.length) return false;
+  exercise.splitWeightMode = !!normalized.splitMode;
+  exercise.sets = generatedSets;
+  return true;
 }
 
 function isBlankSet(set) {
@@ -1032,6 +1167,7 @@ function renderExercises() {
       exercise.primaryGroup || displayProfile?.primary || '',
       'exercise-secondary'
     );
+    renderNextTargetInputs(card, displayProfile?.nextTarget || null);
 
     const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
     if (previousSessionEl) {
@@ -1379,6 +1515,7 @@ function handleRoutineInputChange(target) {
 
 function addRoutineExercisesToCurrentDay() {
   const routines = loadRoutines();
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
   const dayKey = getSelectedRoutineSourceDay();
   const optionId = getSelectedRoutineSourceOptionId(routines, dayKey);
   const option = (routines[dayKey] || []).find(entry => entry.id === optionId) || null;
@@ -1398,7 +1535,7 @@ function addRoutineExercisesToCurrentDay() {
   }
 
   toAdd.forEach(item => {
-    state.exercises.push({
+    const exercise = {
       id: uid(),
       name: item.name,
       notes: item.notes || '',
@@ -1406,7 +1543,10 @@ function addRoutineExercisesToCurrentDay() {
       secondaryGroups: [...(item.secondaryGroups || [])],
       splitWeightMode: false,
       sets: [newSet()]
-    });
+    };
+    const profile = getAutoExerciseProfile(item.name, catalog);
+    applyExerciseTargetIfNeeded(exercise, profile?.nextTarget);
+    state.exercises.push(exercise);
   });
 
   activeExerciseId = state.exercises[state.exercises.length - 1]?.id || activeExerciseId;
@@ -1557,6 +1697,7 @@ function renderDayExerciseSummary() {
       <div><span class="label">Secondary:</span> <span>${formatMuscleList(secondaryGroups)}</span></div>
       <div><span class="label">Laatste keer:</span> <span>${previousSession ? formatShortDate(previousSession.date) : '-'}</span></div>
       <div><span class="label">Vorige sets:</span> <span>${previousSession ? formatFocusSetsDetail(previousSession.sets) : 'Nog geen eerdere sessie'}</span></div>
+      <div><span class="label">Vorig volume:</span> <span>${previousSession ? `${formatNumber(previousSession.volume)} kg` : '-'}</span></div>
     `;
 
     const link = document.createElement('button');
@@ -1735,6 +1876,15 @@ function handleInputChange(target) {
     || target.classList.contains('quick-set-left-weight')
     || target.classList.contains('quick-set-right-weight')
     || target.classList.contains('quick-set-rpe')
+    || target.classList.contains('next-target-count')
+    || target.classList.contains('next-target-left-count')
+    || target.classList.contains('next-target-right-count')
+    || target.classList.contains('next-target-reps')
+    || target.classList.contains('next-target-left-reps')
+    || target.classList.contains('next-target-right-reps')
+    || target.classList.contains('next-target-weight')
+    || target.classList.contains('next-target-left-weight')
+    || target.classList.contains('next-target-right-weight')
   ) return;
   const exId = card.dataset.id;
   const exercise = state.exercises.find(ex => ex.id === exId);
@@ -2144,8 +2294,55 @@ function normalizeExerciseProfile(profile) {
     name,
     primary,
     secondaryGroups,
-    secondary: secondaryGroups[0] || ''
+    secondary: secondaryGroups[0] || '',
+    nextTarget: normalizeExerciseTarget(profile?.nextTarget)
   };
+}
+
+function normalizeExerciseTarget(target) {
+  const splitMode = !!target?.splitMode
+    || ((target?.leftCount ?? '') !== '')
+    || ((target?.rightCount ?? '') !== '')
+    || ((target?.leftReps ?? '') !== '')
+    || ((target?.rightReps ?? '') !== '')
+    || ((target?.leftWeight ?? '') !== '')
+    || ((target?.rightWeight ?? '') !== '');
+
+  return {
+    splitMode,
+    count: target?.count ?? '',
+    leftCount: target?.leftCount ?? '',
+    rightCount: target?.rightCount ?? '',
+    reps: target?.reps ?? '',
+    leftReps: target?.leftReps ?? '',
+    rightReps: target?.rightReps ?? '',
+    weight: target?.weight ?? '',
+    leftWeight: target?.leftWeight ?? '',
+    rightWeight: target?.rightWeight ?? ''
+  };
+}
+
+function hasExerciseTarget(target) {
+  const normalized = normalizeExerciseTarget(target);
+  const countReady = normalized.splitMode
+    ? Number(normalized.leftCount || 0) > 0 || Number(normalized.rightCount || 0) > 0
+    : Number(normalized.count || 0) > 0;
+  const detailReady = normalized.splitMode
+    ? [normalized.leftReps, normalized.rightReps, normalized.leftWeight, normalized.rightWeight].some(value => `${value}` !== '')
+    : [normalized.reps, normalized.weight].some(value => `${value}` !== '');
+  return countReady && detailReady;
+}
+
+function mergeExerciseProfiles(current, incoming) {
+  const base = normalizeExerciseProfile(incoming);
+  if (hasExerciseTarget(base.nextTarget)) return base;
+  if (current && hasExerciseTarget(current.nextTarget)) {
+    return {
+      ...base,
+      nextTarget: normalizeExerciseTarget(current.nextTarget)
+    };
+  }
+  return base;
 }
 
 function classifyExercise(name) {
@@ -2214,25 +2411,28 @@ function resolveExerciseMuscles(exercise) {
 
 function getExerciseCatalog(all) {
   const byName = new Map();
+  const addToCatalog = profile => {
+    const normalized = normalizeExerciseProfile(profile);
+    const key = normalizeExerciseName(normalized.name);
+    const current = byName.get(key);
+    byName.set(key, mergeExerciseProfiles(current, normalized));
+  };
 
   EXERCISE_LIBRARY.forEach(item => {
-    const profile = normalizeExerciseProfile(item);
-    byName.set(normalizeExerciseName(profile.name), profile);
+    addToCatalog(item);
   });
 
   loadCustomExerciseLibrary().forEach(item => {
-    const profile = normalizeExerciseProfile(item);
-    byName.set(normalizeExerciseName(profile.name), profile);
+    addToCatalog(item);
   });
 
   Object.values(loadRoutines()).flat().forEach(item => {
     if (!item?.name) return;
-    const profile = normalizeExerciseProfile({
+    addToCatalog({
       name: item.name,
       primary: item.primaryGroup || '',
       secondaryGroups: item.secondaryGroups ?? item.secondaryGroup
     });
-    byName.set(normalizeExerciseName(profile.name), profile);
   });
 
   Object.entries(all || {})
@@ -2242,8 +2442,7 @@ function getExerciseCatalog(all) {
         const name = (exercise?.name || '').trim();
         if (!name) return;
         const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
-        const profile = normalizeExerciseProfile({ name, primary, secondaryGroups });
-        byName.set(normalizeExerciseName(name), profile);
+        addToCatalog({ name, primary, secondaryGroups });
       });
     });
 
@@ -5281,6 +5480,23 @@ exerciseList.addEventListener('click', event => {
       });
       flashButtonLabel(event.target, 'Bewaard');
     }
+  }
+
+  if (event.target.classList.contains('save-next-target')) {
+    const exercise = state.exercises.find(ex => ex.id === exId);
+    const result = saveExerciseNextTarget(exercise, card);
+    if (!result.ok) {
+      alert(result.message);
+      return;
+    }
+    const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+    document.querySelectorAll('.exercise-card').forEach(currentCard => {
+      const select = currentCard.querySelector('.exercise-select');
+      const currentExercise = state.exercises.find(ex => ex.id === currentCard.dataset.id);
+      populateExerciseSelect(select, catalog, currentExercise?.name || '');
+    });
+    flashButtonLabel(event.target, 'Target bewaard', 1100);
+    return;
   }
 
   if (event.target.classList.contains('add-set')) {
