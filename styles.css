@@ -679,6 +679,19 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   gap: 12px;
 }
 
+.next-target-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.next-target-mode span:last-child {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
 .next-target-head .label {
   display: block;
   font-size: 0.84rem;
@@ -727,6 +740,102 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 
 .exercise-card.is-split-mode .next-target-grid {
   grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.target-sets-editor {
+  display: none;
+  gap: 10px;
+}
+
+.exercise-card.is-target-detailed .next-target-grid {
+  display: none;
+}
+
+.exercise-card.is-target-detailed .target-sets-editor {
+  display: grid;
+}
+
+.target-sets-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.target-sets {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.target-sets-head,
+.target-set-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr) 32px;
+  gap: 10px;
+  align-items: center;
+}
+
+.exercise-card.is-split-mode .target-sets-head,
+.exercise-card.is-split-mode .target-set-row {
+  grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 32px;
+}
+
+.target-sets-head {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.target-sets-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.target-set-row input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+.target-set-index {
+  font-weight: 700;
+}
+
+.target-column-left-reps,
+.target-column-right-reps,
+.target-column-left,
+.target-column-right,
+.target-set-left-reps,
+.target-set-right-reps,
+.target-set-left-weight,
+.target-set-right-weight {
+  display: none;
+}
+
+.exercise-card.is-split-mode .target-column-reps,
+.exercise-card.is-split-mode .target-column-weight,
+.exercise-card.is-split-mode .target-set-reps,
+.exercise-card.is-split-mode .target-set-weight {
+  display: none;
+}
+
+.exercise-card.is-split-mode .target-column-left-reps,
+.exercise-card.is-split-mode .target-column-right-reps,
+.exercise-card.is-split-mode .target-column-left,
+.exercise-card.is-split-mode .target-column-right,
+.exercise-card.is-split-mode .target-set-left-reps,
+.exercise-card.is-split-mode .target-set-right-reps,
+.exercise-card.is-split-mode .target-set-left-weight,
+.exercise-card.is-split-mode .target-set-right-weight {
+  display: block;
+}
+
+.target-set-row .remove-target-set {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  color: #a64a3a;
 }
 
 .routine-list {
@@ -1258,6 +1367,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .exercise-name-row { grid-template-columns: 1fr; }
   .quick-grid { grid-template-columns: 1fr 1fr; }
   .next-target-head { grid-template-columns: 1fr; display: grid; }
+  .next-target-actions { justify-content: stretch; }
   .next-target-grid { grid-template-columns: 1fr 1fr; }
   .exercise-card.is-split-mode .quick-grid,
   .exercise-card.is-split-mode .next-target-grid {
@@ -1266,6 +1376,10 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .exercise-card.is-split-mode .sets-head,
   .exercise-card.is-split-mode .set-row {
     min-width: 720px;
+  }
+  .exercise-card.is-split-mode .target-sets-head,
+  .exercise-card.is-split-mode .target-set-row {
+    min-width: 620px;
   }
   .routine-head { grid-template-columns: 1fr; }
   .routine-option-bar { grid-template-columns: 1fr; }

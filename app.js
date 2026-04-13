@@ -113,6 +113,7 @@ const statVolume = document.getElementById('statVolume');
 
 const exerciseTemplate = document.getElementById('exerciseTemplate');
 const setRowTemplate = document.getElementById('setRowTemplate');
+const targetSetRowTemplate = document.getElementById('targetSetRowTemplate');
 const routineTemplate = document.getElementById('routineTemplate');
 
 const state = {
@@ -684,6 +685,28 @@ function newSet(seed) {
   };
 }
 
+function normalizeTargetSet(seed) {
+  const inferredMode = seed?.weightMode === 'split'
+    || (seed?.weightMode !== 'single' && (
+      (seed?.leftWeight ?? '') !== ''
+      || (seed?.rightWeight ?? '') !== ''
+      || (seed?.leftReps ?? '') !== ''
+      || (seed?.rightReps ?? '') !== ''
+    ))
+    ? 'split'
+    : 'single';
+  return {
+    id: String(seed?.id || uid()),
+    reps: seed?.reps ?? '',
+    leftReps: seed?.leftReps ?? '',
+    rightReps: seed?.rightReps ?? '',
+    weight: seed?.weight ?? '',
+    leftWeight: seed?.leftWeight ?? '',
+    rightWeight: seed?.rightWeight ?? '',
+    weightMode: inferredMode
+  };
+}
+
 function populateMuscleSelect(select, options) {
   if (!select) return;
   if (select.options.length) return;
@@ -769,13 +792,13 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
     if (primarySelect) primarySelect.value = 'Automatisch';
     renderSecondaryPicker(secondaryPicker, [], '', 'exercise-secondary');
     renderNextTargetInputs(card, null);
-    return;
+    return { didPrefill: false };
   }
 
   exercise.name = profile.name;
   exercise.primaryGroup = profile.primary || '';
   exercise.secondaryGroups = normalizeSecondaryGroups(profile.secondaryGroups ?? profile.secondary, exercise.primaryGroup);
-  applyExerciseTargetIfNeeded(exercise, nextTarget);
+  const didPrefill = applyExerciseTargetIfNeeded(exercise, nextTarget);
 
   if (nameInput) nameInput.value = exercise.name;
   if (selectInput) {
@@ -785,6 +808,7 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
   if (primarySelect) primarySelect.value = exercise.primaryGroup || 'Automatisch';
   renderSecondaryPicker(secondaryPicker, exercise.secondaryGroups, exercise.primaryGroup, 'exercise-secondary');
   renderNextTargetInputs(card, nextTarget);
+  return { didPrefill };
 }
 
 function populateExerciseSelect(select, catalog, currentName) {
@@ -993,10 +1017,82 @@ function renderNextTargetInputs(card, target = null) {
     const input = card.querySelector(selector);
     if (input) input.value = value ?? '';
   });
+
+  const detailedToggle = card.querySelector('.next-target-detailed-toggle');
+  if (detailedToggle) detailedToggle.checked = isDetailedExerciseTarget(normalized);
+  card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(normalized));
+  renderTargetSetRows(card, normalized.targetSets, normalized.splitMode, isDetailedExerciseTarget(normalized));
+}
+
+function appendTargetSetRow(card, set, index) {
+  const body = card?.querySelector('.target-sets-body');
+  if (!body || !targetSetRowTemplate) return;
+  const row = targetSetRowTemplate.content.firstElementChild.cloneNode(true);
+  row.dataset.id = set.id || uid();
+  row.querySelector('.target-set-index').textContent = index + 1;
+  row.querySelector('.target-set-reps').value = set.reps ?? '';
+  row.querySelector('.target-set-left-reps').value = set.leftReps ?? '';
+  row.querySelector('.target-set-weight').value = set.weight ?? '';
+  row.querySelector('.target-set-right-reps').value = set.rightReps ?? '';
+  row.querySelector('.target-set-left-weight').value = set.leftWeight ?? '';
+  row.querySelector('.target-set-right-weight').value = set.rightWeight ?? '';
+  body.appendChild(row);
+}
+
+function getTargetSetRows(card) {
+  return Array.from(card?.querySelectorAll('.target-set-row') || []);
+}
+
+function renumberTargetSetRows(card) {
+  getTargetSetRows(card).forEach((row, index) => {
+    const label = row.querySelector('.target-set-index');
+    if (label) label.textContent = index + 1;
+  });
+}
+
+function renderTargetSetRows(card, sets = [], splitMode = false, ensureRow = false) {
+  const body = card?.querySelector('.target-sets-body');
+  if (!body) return;
+  body.innerHTML = '';
+  const normalizedSets = (sets || []).map(normalizeTargetSet).filter(set => !isBlankSet(set));
+  const rowsToRender = normalizedSets.length
+    ? normalizedSets
+    : (ensureRow ? [normalizeTargetSet({ weightMode: splitMode ? 'split' : 'single' })] : []);
+  rowsToRender.forEach((set, index) => appendTargetSetRow(card, set, index));
+  renumberTargetSetRows(card);
+}
+
+function readTargetSetsFromCard(card, splitMode = false) {
+  return getTargetSetRows(card)
+    .map(row => normalizeTargetSet({
+      id: row.dataset.id || uid(),
+      reps: row.querySelector('.target-set-reps')?.value ?? '',
+      leftReps: row.querySelector('.target-set-left-reps')?.value ?? '',
+      rightReps: row.querySelector('.target-set-right-reps')?.value ?? '',
+      weight: row.querySelector('.target-set-weight')?.value ?? '',
+      leftWeight: row.querySelector('.target-set-left-weight')?.value ?? '',
+      rightWeight: row.querySelector('.target-set-right-weight')?.value ?? '',
+      weightMode: splitMode
+        ? 'split'
+        : (`${row.querySelector('.target-set-left-weight')?.value ?? ''}` !== '' || `${row.querySelector('.target-set-right-weight')?.value ?? ''}` !== ''
+          ? 'split'
+          : 'single')
+    }))
+    .filter(set => !isBlankSet(set));
 }
 
 function readNextTargetFromCard(card, splitMode) {
+  const detailed = !!card.querySelector('.next-target-detailed-toggle')?.checked;
+  if (detailed) {
+    return normalizeExerciseTarget({
+      mode: 'detailed',
+      splitMode,
+      targetSets: readTargetSetsFromCard(card, splitMode)
+    });
+  }
+
   return normalizeExerciseTarget({
+    mode: 'simple',
     splitMode,
     count: card.querySelector('.next-target-count')?.value ?? '',
     leftCount: card.querySelector('.next-target-left-count')?.value ?? '',
@@ -1013,6 +1109,20 @@ function readNextTargetFromCard(card, splitMode) {
 function buildSetsFromExerciseTarget(target) {
   const normalized = normalizeExerciseTarget(target);
   if (!hasExerciseTarget(normalized)) return [];
+
+  if (normalized.targetSets.length) {
+    return normalized.targetSets
+      .filter(set => !isBlankSet(set))
+      .map(set => newSet({
+        reps: set.reps ?? '',
+        leftReps: set.leftReps ?? '',
+        rightReps: set.rightReps ?? '',
+        weight: set.weight ?? '',
+        leftWeight: set.leftWeight ?? '',
+        rightWeight: set.rightWeight ?? '',
+        weightMode: usesSplitWeight(set, set.weightMode) ? 'split' : 'single'
+      }));
+  }
 
   if (normalized.splitMode) {
     const leftCount = Number(normalized.leftCount || 0);
@@ -1167,6 +1277,7 @@ function renderExercises() {
       exercise.primaryGroup || displayProfile?.primary || '',
       'exercise-secondary'
     );
+    card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(displayProfile?.nextTarget));
     renderNextTargetInputs(card, displayProfile?.nextTarget || null);
 
     const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
@@ -1885,6 +1996,12 @@ function handleInputChange(target) {
     || target.classList.contains('next-target-weight')
     || target.classList.contains('next-target-left-weight')
     || target.classList.contains('next-target-right-weight')
+    || target.classList.contains('target-set-reps')
+    || target.classList.contains('target-set-left-reps')
+    || target.classList.contains('target-set-right-reps')
+    || target.classList.contains('target-set-weight')
+    || target.classList.contains('target-set-left-weight')
+    || target.classList.contains('target-set-right-weight')
   ) return;
   const exId = card.dataset.id;
   const exercise = state.exercises.find(ex => ex.id === exId);
@@ -1894,7 +2011,12 @@ function handleInputChange(target) {
   if (target.classList.contains('exercise-name')) {
     const profile = getAutoExerciseProfile(target.value, catalog);
     if (profile) {
-      applyExerciseProfile(exercise, card, profile, catalog);
+      const result = applyExerciseProfile(exercise, card, profile, catalog);
+      if (result?.didPrefill) {
+        renderExercises();
+        persist();
+        return;
+      }
     } else {
       exercise.name = target.value;
       applyExerciseProfile(exercise, card, null, catalog);
@@ -1903,7 +2025,12 @@ function handleInputChange(target) {
   if (target.classList.contains('exercise-select')) {
     if (target.value) {
       const profile = getAutoExerciseProfile(target.value, catalog);
-      applyExerciseProfile(exercise, card, profile, catalog);
+      const result = applyExerciseProfile(exercise, card, profile, catalog);
+      if (result?.didPrefill) {
+        renderExercises();
+        persist();
+        return;
+      }
     }
   }
   if (target.classList.contains('exercise-notes')) {
@@ -1921,6 +2048,13 @@ function handleInputChange(target) {
     syncExerciseSplitMode(exercise, target.checked);
     renderExercises();
     persist();
+    return;
+  }
+  if (target.classList.contains('next-target-detailed-toggle')) {
+    card.classList.toggle('is-target-detailed', target.checked);
+    if (target.checked) {
+      renderTargetSetRows(card, readTargetSetsFromCard(card, !!exercise.splitWeightMode), !!exercise.splitWeightMode, true);
+    }
     return;
   }
 
@@ -2300,15 +2434,25 @@ function normalizeExerciseProfile(profile) {
 }
 
 function normalizeExerciseTarget(target) {
+  const targetSets = Array.isArray(target?.targetSets)
+    ? target.targetSets.map(normalizeTargetSet)
+    : [];
   const splitMode = !!target?.splitMode
     || ((target?.leftCount ?? '') !== '')
     || ((target?.rightCount ?? '') !== '')
     || ((target?.leftReps ?? '') !== '')
     || ((target?.rightReps ?? '') !== '')
     || ((target?.leftWeight ?? '') !== '')
-    || ((target?.rightWeight ?? '') !== '');
+    || ((target?.rightWeight ?? '') !== '')
+    || targetSets.some(set =>
+      usesSplitWeight(set, set?.weightMode)
+      || (set?.leftReps ?? '') !== ''
+      || (set?.rightReps ?? '') !== ''
+    );
+  const mode = (target?.mode === 'detailed' || targetSets.length) ? 'detailed' : 'simple';
 
   return {
+    mode,
     splitMode,
     count: target?.count ?? '',
     leftCount: target?.leftCount ?? '',
@@ -2318,12 +2462,14 @@ function normalizeExerciseTarget(target) {
     rightReps: target?.rightReps ?? '',
     weight: target?.weight ?? '',
     leftWeight: target?.leftWeight ?? '',
-    rightWeight: target?.rightWeight ?? ''
+    rightWeight: target?.rightWeight ?? '',
+    targetSets
   };
 }
 
 function hasExerciseTarget(target) {
   const normalized = normalizeExerciseTarget(target);
+  if (normalized.targetSets.some(set => !isBlankSet(set))) return true;
   const countReady = normalized.splitMode
     ? Number(normalized.leftCount || 0) > 0 || Number(normalized.rightCount || 0) > 0
     : Number(normalized.count || 0) > 0;
@@ -2331,6 +2477,11 @@ function hasExerciseTarget(target) {
     ? [normalized.leftReps, normalized.rightReps, normalized.leftWeight, normalized.rightWeight].some(value => `${value}` !== '')
     : [normalized.reps, normalized.weight].some(value => `${value}` !== '');
   return countReady && detailReady;
+}
+
+function isDetailedExerciseTarget(target) {
+  const normalized = normalizeExerciseTarget(target);
+  return normalized.mode === 'detailed';
 }
 
 function mergeExerciseProfiles(current, incoming) {
@@ -5496,6 +5647,23 @@ exerciseList.addEventListener('click', event => {
       populateExerciseSelect(select, catalog, currentExercise?.name || '');
     });
     flashButtonLabel(event.target, 'Target bewaard', 1100);
+    return;
+  }
+
+  if (event.target.classList.contains('add-target-set')) {
+    appendTargetSetRow(card, normalizeTargetSet({
+      weightMode: state.exercises.find(ex => ex.id === exId)?.splitWeightMode ? 'split' : 'single'
+    }), getTargetSetRows(card).length);
+    renumberTargetSetRows(card);
+    return;
+  }
+
+  if (event.target.classList.contains('remove-target-set')) {
+    const row = event.target.closest('.target-set-row');
+    if (row) {
+      row.remove();
+      renumberTargetSetRows(card);
+    }
     return;
   }
 
