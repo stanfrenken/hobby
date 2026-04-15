@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260415a" />
+  <link rel="stylesheet" href="styles.css?v=20260415b" />
 </head>
 <body>
   <div class="bg"></div>
@@ -79,6 +79,16 @@
             <div class="control buttons">
               <button id="addExercise" class="primary">Oefening toevoegen</button>
               <button id="addRoutineToDayBtn" class="ghost">Voeg vaste oefeningen toe</button>
+              <label class="control inline export-log-range">
+                <span>Excel</span>
+                <select id="exportLogRange">
+                  <option value="day">Dag</option>
+                  <option value="week">Week</option>
+                  <option value="month">Maand</option>
+                  <option value="year">Jaar</option>
+                  <option value="all">Alles</option>
+                </select>
+              </label>
               <button id="exportExcelLogBtn" class="ghost small" type="button">Excel</button>
               <button id="saveDay" class="ghost">Opslaan</button>
             </div>
@@ -609,7 +619,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260415a"></script>
+  <script src="app.js?v=20260415b"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>

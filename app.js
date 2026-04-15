@@ -33,6 +33,7 @@ const addRoutineToDayBtn = document.getElementById('addRoutineToDayBtn');
 const addExerciseMiniBtn = document.getElementById('addExerciseMini');
 const addExerciseEmptyBtn = document.getElementById('addExerciseEmpty');
 const saveDayBtn = document.getElementById('saveDay');
+const exportLogRangeSelect = document.getElementById('exportLogRange');
 const exportExcelLogBtn = document.getElementById('exportExcelLogBtn');
 const exerciseList = document.getElementById('exerciseList');
 const emptyState = document.getElementById('emptyState');
@@ -4566,8 +4567,19 @@ function downloadWorkbookXml(filename, sheets) {
   URL.revokeObjectURL(link.href);
 }
 
-function exportCurrentDayExcel() {
-  const day = cloneState();
+function hasDayExportContent(day) {
+  if (!day || typeof day !== 'object') return false;
+  if (String(day.sessionName || '').trim()) return true;
+  if (String(day.bodyweight ?? '').trim()) return true;
+  if (String(day.startTime || '').trim() || String(day.endTime || '').trim()) return true;
+  return (day.exercises || []).some(exercise =>
+    String(exercise?.name || '').trim()
+    || String(exercise?.notes || '').trim()
+    || (exercise?.sets || []).some(set => !isBlankSet(set))
+  );
+}
+
+function buildLogbookSummaryRowsForEntries(entries) {
   const rows = [[
     'Datum',
     'Sessie',
@@ -4578,18 +4590,26 @@ function exportCurrentDayExcel() {
     'Oefeningen',
     'Sets',
     'Totaal volume (kg)'
-  ], [
-    state.date,
-    day.sessionName || '',
-    day.bodyweight === '' ? '' : Number(day.bodyweight) || day.bodyweight,
-    day.startTime || '',
-    day.endTime || '',
-    computeTrainingDurationMinutes(day),
-    day.exercises.length,
-    day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).length, 0),
-    day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).reduce((setSum, set) => setSum + setVolume(set, exercise), 0), 0)
   ]];
 
+  entries.forEach(({ date, day }) => {
+    rows.push([
+      date,
+      day.sessionName || '',
+      day.bodyweight === '' ? '' : Number(day.bodyweight) || day.bodyweight,
+      day.startTime || '',
+      day.endTime || '',
+      computeTrainingDurationMinutes(day),
+      day.exercises.length,
+      day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).length, 0),
+      day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).reduce((setSum, set) => setSum + setVolume(set, exercise), 0), 0)
+    ]);
+  });
+
+  return rows;
+}
+
+function buildLogbookSetRowsForEntries(entries) {
   const setRows = [[
     'Datum',
     'Sessie',
@@ -4612,38 +4632,117 @@ function exportCurrentDayExcel() {
     'Volume (kg)'
   ]];
 
-  day.exercises.forEach(exercise => {
-    const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
-    (exercise.sets || []).forEach((set, index) => {
-      const repData = getSetRepData(set, exercise);
-      const weightData = getSetWeightData(set, exercise);
-      const splitMode = repData.splitMode || weightData.splitMode;
-      setRows.push([
-        state.date,
-        day.sessionName || '',
-        exercise.name || '',
-        primary,
-        secondaryGroups.join(', '),
-        exercise.notes || '',
-        index + 1,
-        splitMode ? 'Alternating' : 'Standaard',
-        day.startTime || '',
-        day.endTime || '',
-        splitMode ? '' : (repData.reps ?? ''),
-        splitMode ? '' : (weightData.weight ?? ''),
-        splitMode ? (repData.left ?? '') : '',
-        splitMode ? (weightData.left ?? '') : '',
-        splitMode ? (repData.right ?? '') : '',
-        splitMode ? (weightData.right ?? '') : '',
-        set.rpe ?? '',
-        set.done ? 'Ja' : '',
-        setVolume(set, exercise)
-      ]);
+  entries.forEach(({ date, day }) => {
+    day.exercises.forEach(exercise => {
+      const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
+      (exercise.sets || []).forEach((set, index) => {
+        const repData = getSetRepData(set, exercise);
+        const weightData = getSetWeightData(set, exercise);
+        const splitMode = repData.splitMode || weightData.splitMode;
+        setRows.push([
+          date,
+          day.sessionName || '',
+          exercise.name || '',
+          primary,
+          secondaryGroups.join(', '),
+          exercise.notes || '',
+          index + 1,
+          splitMode ? 'Alternating' : 'Standaard',
+          day.startTime || '',
+          day.endTime || '',
+          splitMode ? '' : (repData.reps ?? ''),
+          splitMode ? '' : (weightData.weight ?? ''),
+          splitMode ? (repData.left ?? '') : '',
+          splitMode ? (weightData.left ?? '') : '',
+          splitMode ? (repData.right ?? '') : '',
+          splitMode ? (weightData.right ?? '') : '',
+          set.rpe ?? '',
+          set.done ? 'Ja' : '',
+          setVolume(set, exercise)
+        ]);
+      });
     });
   });
 
-  downloadWorkbookXml(`fitness-logboek-${state.date || todayISO()}.xlsx`, [
-    { name: 'Samenvatting', rows },
+  return setRows;
+}
+
+function getLogbookExportRangeEntries(range) {
+  const all = getCurrentAllData();
+  const selectedDate = state.date || todayISO();
+  const sortedEntries = Object.entries(all)
+    .filter(([, day]) => hasDayExportContent(day))
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (range === 'all') {
+    return sortedEntries.map(([date, day]) => ({ date, day }));
+  }
+
+  if (range === 'day') {
+    return hasDayExportContent(all[selectedDate])
+      ? [{ date: selectedDate, day: all[selectedDate] }]
+      : [];
+  }
+
+  if (range === 'week') {
+    const weekDates = new Set(getWeekDates(formatWeekInputValue(selectedDate)));
+    return sortedEntries
+      .filter(([date]) => weekDates.has(date))
+      .map(([date, day]) => ({ date, day }));
+  }
+
+  if (range === 'month') {
+    const selected = parseDate(selectedDate);
+    if (!selected) return [];
+    return sortedEntries
+      .filter(([date]) => {
+        const current = parseDate(date);
+        return current && current.getFullYear() === selected.getFullYear() && current.getMonth() === selected.getMonth();
+      })
+      .map(([date, day]) => ({ date, day }));
+  }
+
+  if (range === 'year') {
+    const selected = parseDate(selectedDate);
+    if (!selected) return [];
+    return sortedEntries
+      .filter(([date]) => {
+        const current = parseDate(date);
+        return current && current.getFullYear() === selected.getFullYear();
+      })
+      .map(([date, day]) => ({ date, day }));
+  }
+
+  return [];
+}
+
+function getLogbookExportFilename(range, referenceDate, entries) {
+  const safeDate = referenceDate || todayISO();
+  if (range === 'day') return `fitness-logboek-${safeDate}.xlsx`;
+  if (range === 'week') return `fitness-logboek-week-${formatWeekInputValue(safeDate)}.xlsx`;
+  if (range === 'month') return `fitness-logboek-maand-${safeDate.slice(0, 7)}.xlsx`;
+  if (range === 'year') return `fitness-logboek-jaar-${safeDate.slice(0, 4)}.xlsx`;
+  if (range === 'all') {
+    const first = entries[0]?.date || safeDate;
+    const last = entries[entries.length - 1]?.date || safeDate;
+    return `fitness-logboek-alles-${first}-tot-${last}.xlsx`;
+  }
+  return `fitness-logboek-${safeDate}.xlsx`;
+}
+
+function exportCurrentDayExcel() {
+  const range = exportLogRangeSelect?.value || 'day';
+  const entries = getLogbookExportRangeEntries(range);
+  if (!entries.length) {
+    alert('Geen logboekdata gevonden voor deze periode.');
+    return;
+  }
+
+  const summaryRows = buildLogbookSummaryRowsForEntries(entries);
+  const setRows = buildLogbookSetRowsForEntries(entries);
+
+  downloadWorkbookXml(getLogbookExportFilename(range, state.date || todayISO(), entries), [
+    { name: 'Samenvatting', rows: summaryRows },
     { name: 'Sets', rows: setRows }
   ]);
 }
