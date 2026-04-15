@@ -720,6 +720,12 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   width: 100%;
 }
 
+.next-target-note-control textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+}
+
 .target-count-split,
 .target-reps-split,
 .target-weight-split {

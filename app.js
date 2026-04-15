@@ -1010,7 +1010,8 @@ function renderNextTargetInputs(card, target = null) {
     '.next-target-right-reps': normalized.rightReps,
     '.next-target-weight': normalized.weight,
     '.next-target-left-weight': normalized.leftWeight,
-    '.next-target-right-weight': normalized.rightWeight
+    '.next-target-right-weight': normalized.rightWeight,
+    '.next-target-note': normalized.note
   };
 
   Object.entries(fieldMap).forEach(([selector, value]) => {
@@ -1084,10 +1085,11 @@ function readTargetSetsFromCard(card, splitMode = false) {
 function readNextTargetFromCard(card, splitMode) {
   const detailed = !!card.querySelector('.next-target-detailed-toggle')?.checked;
   if (detailed) {
-    return normalizeExerciseTarget({
+  return normalizeExerciseTarget({
       mode: 'detailed',
       splitMode,
-      targetSets: readTargetSetsFromCard(card, splitMode)
+      targetSets: readTargetSetsFromCard(card, splitMode),
+      note: card.querySelector('.next-target-note')?.value ?? ''
     });
   }
 
@@ -1102,7 +1104,8 @@ function readNextTargetFromCard(card, splitMode) {
     rightReps: card.querySelector('.next-target-right-reps')?.value ?? '',
     weight: card.querySelector('.next-target-weight')?.value ?? '',
     leftWeight: card.querySelector('.next-target-left-weight')?.value ?? '',
-    rightWeight: card.querySelector('.next-target-right-weight')?.value ?? ''
+    rightWeight: card.querySelector('.next-target-right-weight')?.value ?? '',
+    note: card.querySelector('.next-target-note')?.value ?? ''
   });
 }
 
@@ -1996,6 +1999,7 @@ function handleInputChange(target) {
     || target.classList.contains('next-target-weight')
     || target.classList.contains('next-target-left-weight')
     || target.classList.contains('next-target-right-weight')
+    || target.classList.contains('next-target-note')
     || target.classList.contains('target-set-reps')
     || target.classList.contains('target-set-left-reps')
     || target.classList.contains('target-set-right-reps')
@@ -2463,6 +2467,7 @@ function normalizeExerciseTarget(target) {
     weight: target?.weight ?? '',
     leftWeight: target?.leftWeight ?? '',
     rightWeight: target?.rightWeight ?? '',
+    note: String(target?.note || '').trim(),
     targetSets
   };
 }
