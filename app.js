@@ -16,6 +16,8 @@ const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
 const startTimeInput = document.getElementById('startTimeInput');
 const endTimeInput = document.getElementById('endTimeInput');
+const moveLogDateInput = document.getElementById('moveLogDateInput');
+const moveLogDateBtn = document.getElementById('moveLogDateBtn');
 const routineSourceDaySelect = document.getElementById('routineSourceDay');
 const routineSourceOptionSelect = document.getElementById('routineSourceOption');
 const pageStoryBtn = document.getElementById('pageStoryBtn');
@@ -649,6 +651,94 @@ function persist() {
   syncState.lastChangedScope = 'day';
   scheduleAutoSync();
   emitCloudChange('day');
+}
+
+function markAllDataChanged(scope = 'all', changedDate = state.date) {
+  syncState.dirty = true;
+  syncState.lastLocalChange = Date.now();
+  syncState.lastChangedDate = changedDate;
+  syncState.lastChangedScope = scope;
+  scheduleAutoSync();
+  emitCloudChange(scope);
+}
+
+function createEmptyDay() {
+  return {
+    sessionName: '',
+    bodyweight: '',
+    startTime: '',
+    endTime: '',
+    updatedAt: 0,
+    exercises: []
+  };
+}
+
+function mergeDayData(sourceDay, targetDay) {
+  const target = targetDay || createEmptyDay();
+  const source = sourceDay || createEmptyDay();
+  return {
+    sessionName: target.sessionName || source.sessionName || '',
+    bodyweight: target.bodyweight !== '' && target.bodyweight !== undefined && target.bodyweight !== null
+      ? target.bodyweight
+      : (source.bodyweight ?? ''),
+    startTime: target.startTime || source.startTime || '',
+    endTime: target.endTime || source.endTime || '',
+    updatedAt: Date.now(),
+    exercises: [
+      ...(target.exercises || []),
+      ...(source.exercises || []).map(exercise => ({
+        ...exercise,
+        id: uid(),
+        sets: (exercise.sets || []).map(set => ({ ...set, id: uid() }))
+      }))
+    ]
+  };
+}
+
+function moveCurrentLogToDate() {
+  const sourceDate = state.date;
+  const targetDate = normalizeDateValue(moveLogDateInput?.value || '');
+  if (!sourceDate || !targetDate) {
+    alert('Kies eerst een doeldatum.');
+    return;
+  }
+  if (sourceDate === targetDate) {
+    alert('De doeldatum is hetzelfde als de huidige datum.');
+    return;
+  }
+
+  const all = loadAll();
+  all[sourceDate] = cloneState();
+  const sourceDay = all[sourceDate] || createEmptyDay();
+  if (!hasDayExportContent(sourceDay)) {
+    alert('Er staat geen logboekdata op de huidige datum om te verplaatsen.');
+    return;
+  }
+
+  const targetDay = all[targetDate] || createEmptyDay();
+  if (hasDayExportContent(targetDay)) {
+    const merge = confirm(`${formatLongDate(targetDate)} bevat al logboekdata. Klik OK om samen te voegen, of Annuleren om niets te wijzigen.`);
+    if (!merge) return;
+    all[targetDate] = mergeDayData(sourceDay, targetDay);
+  } else {
+    all[targetDate] = {
+      ...JSON.parse(JSON.stringify(sourceDay)),
+      updatedAt: Date.now()
+    };
+  }
+
+  delete all[sourceDate];
+  saveAll(all);
+
+  if (dateInput) dateInput.value = targetDate;
+  loadDay(targetDate);
+  renderExercises();
+  renderRoutinePage();
+  refreshProgress();
+  sessionProtectedDates.delete(sourceDate);
+  sessionProtectedDates.add(targetDate);
+  markAllDataChanged('all', targetDate);
+  flashButtonLabel(moveLogDateBtn, 'Verplaatst', 1200);
 }
 
 function addExercise() {
@@ -5182,7 +5272,7 @@ function scheduleAutoSync() {
 
   if (syncState.debounceId) clearTimeout(syncState.debounceId);
   syncState.debounceId = setTimeout(() => {
-    if (syncState.lastChangedScope === 'routines') {
+    if (syncState.lastChangedScope === 'routines' || syncState.lastChangedScope === 'all') {
       syncAll();
       return;
     }
@@ -5516,6 +5606,7 @@ addExerciseBtn.addEventListener('click', addExercise);
 addExerciseMiniBtn.addEventListener('click', addExercise);
 addExerciseEmptyBtn.addEventListener('click', addExercise);
 if (exportExcelLogBtn) exportExcelLogBtn.addEventListener('click', exportCurrentDayExcel);
+if (moveLogDateBtn) moveLogDateBtn.addEventListener('click', moveCurrentLogToDate);
 if (addRoutineToDayBtn) addRoutineToDayBtn.addEventListener('click', addRoutineExercisesToCurrentDay);
 if (addRoutineExerciseBtn) addRoutineExerciseBtn.addEventListener('click', addRoutineExercise);
 if (addRoutineOptionBtn) addRoutineOptionBtn.addEventListener('click', addRoutineOption);
