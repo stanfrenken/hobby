@@ -120,6 +120,7 @@ p { margin: 0; color: var(--muted); }
 .page-nav {
   display: inline-flex;
   gap: 8px;
+  flex-wrap: wrap;
   padding: 6px;
   background: rgba(255, 255, 255, 0.62);
   border-radius: 16px;
@@ -435,6 +436,199 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   color: var(--accent-2);
   font-weight: 600;
   font-size: 0.85rem;
+}
+
+.nutrition-toolbar {
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.nutrition-sync-note {
+  min-height: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(15, 107, 102, 0.08), rgba(194, 85, 45, 0.08));
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.nutrition-sync-note p {
+  font-size: 0.82rem;
+}
+
+.nutrition-export-actions {
+  justify-content: flex-end;
+}
+
+.nutrition-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+}
+
+.nutrition-grid > .panel-wide {
+  grid-column: 1 / -1;
+}
+
+.nutrition-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.nutrition-field {
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(0,0,0,0.05);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,240,232,0.95));
+}
+
+.nutrition-field-calories {
+  background: linear-gradient(145deg, rgba(194,85,45,0.12), rgba(255,250,243,0.98));
+}
+
+.nutrition-field-protein {
+  background: linear-gradient(145deg, rgba(15,107,102,0.12), rgba(255,250,243,0.98));
+}
+
+.nutrition-field-fat {
+  background: linear-gradient(145deg, rgba(180,130,69,0.14), rgba(255,250,243,0.98));
+}
+
+.nutrition-field-carbs {
+  background: linear-gradient(145deg, rgba(87,126,190,0.14), rgba(255,250,243,0.98));
+}
+
+.nutrition-summary-cards {
+  display: grid;
+  gap: 12px;
+}
+
+.nutrition-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(0,0,0,0.05);
+  background: rgba(255,255,255,0.9);
+}
+
+.nutrition-card .label {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.nutrition-card .value {
+  font-size: 1.4rem;
+  font-family: 'Fraunces', serif;
+}
+
+.nutrition-card .sub {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.nutrition-card.calories .value {
+  color: var(--accent);
+}
+
+.nutrition-card.protein .value {
+  color: var(--accent-2);
+}
+
+.nutrition-card.fat .value {
+  color: #9a6a22;
+}
+
+.nutrition-card.carbs .value {
+  color: #355ea0;
+}
+
+.nutrition-macro-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.nutrition-macro-hero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.nutrition-macro-hero > div {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.88);
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.nutrition-macro-hero .label {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.nutrition-macro-hero strong {
+  font-size: 1.15rem;
+  font-family: 'Fraunces', serif;
+}
+
+.nutrition-macro-bar {
+  display: flex;
+  width: 100%;
+  min-height: 20px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.06);
+}
+
+.nutrition-macro-segment {
+  display: block;
+  min-width: 0;
+}
+
+.nutrition-macro-segment.protein {
+  background: linear-gradient(90deg, #0f6b66, #18948d);
+}
+
+.nutrition-macro-segment.fat {
+  background: linear-gradient(90deg, #b7853a, #d4a45b);
+}
+
+.nutrition-macro-segment.carbs {
+  background: linear-gradient(90deg, #4f76b6, #7b9fe0);
+}
+
+.nutrition-macro-segment.empty {
+  background: rgba(0,0,0,0.08);
+}
+
+.nutrition-breakdown-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.nutrition-breakdown-row {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr 0.9fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.88);
+  border: 1px solid rgba(0,0,0,0.05);
+  font-size: 0.92rem;
+}
+
+.nutrition-breakdown-name {
+  font-weight: 700;
+}
+
+.nutrition-breakdown-value,
+.nutrition-breakdown-kcal,
+.nutrition-breakdown-share {
+  color: var(--muted);
 }
 
 .exercise-list { display: grid; gap: 16px; }
@@ -1372,11 +1566,32 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
+  .nutrition-grid {
+    grid-template-columns: 1fr;
+  }
   .dashboard-grid > .panel-wide {
+    grid-column: auto;
+  }
+  .nutrition-grid > .panel-wide {
     grid-column: auto;
   }
   .toolbar-row {
     align-items: stretch;
+  }
+  .nutrition-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .nutrition-export-actions {
+    justify-content: stretch;
+  }
+  .nutrition-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .nutrition-macro-hero {
+    grid-template-columns: 1fr;
+  }
+  .nutrition-breakdown-row {
+    grid-template-columns: 1fr 1fr;
   }
   .exercise-meta { grid-template-columns: 1fr; }
   .muscle-grid { grid-template-columns: 1fr; }

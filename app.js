@@ -12,6 +12,7 @@ const PROGRESS_ENTRIES_KEY = 'fitnessLog.progressEntries.v1';
 const VISION_SETTINGS_KEY = 'fitnessLog.visionSettings.v1';
 
 const dateInput = document.getElementById('dateInput');
+const nutritionDateInput = document.getElementById('nutritionDateInput');
 const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
 const startTimeInput = document.getElementById('startTimeInput');
@@ -22,11 +23,13 @@ const routineSourceDaySelect = document.getElementById('routineSourceDay');
 const routineSourceOptionSelect = document.getElementById('routineSourceOption');
 const pageStoryBtn = document.getElementById('pageStoryBtn');
 const pageLogBtn = document.getElementById('pageLogBtn');
+const pageNutritionBtn = document.getElementById('pageNutritionBtn');
 const pageDashboardBtn = document.getElementById('pageDashboardBtn');
 const pageProgressBtn = document.getElementById('pageProgressBtn');
 const pageRoutinesBtn = document.getElementById('pageRoutinesBtn');
 const storyPage = document.getElementById('storyPage');
 const logPage = document.getElementById('logPage');
+const nutritionPage = document.getElementById('nutritionPage');
 const dashboardPage = document.getElementById('dashboardPage');
 const progressPage = document.getElementById('progressPage');
 const routinesPage = document.getElementById('routinesPage');
@@ -37,6 +40,8 @@ const addExerciseEmptyBtn = document.getElementById('addExerciseEmpty');
 const saveDayBtn = document.getElementById('saveDay');
 const exportLogRangeSelect = document.getElementById('exportLogRange');
 const exportExcelLogBtn = document.getElementById('exportExcelLogBtn');
+const exportNutritionRangeSelect = document.getElementById('exportNutritionRange');
+const exportNutritionBtn = document.getElementById('exportNutritionBtn');
 const exerciseList = document.getElementById('exerciseList');
 const emptyState = document.getElementById('emptyState');
 const dayBadge = document.getElementById('dayBadge');
@@ -66,6 +71,13 @@ const focusTable = document.getElementById('focusTable');
 const focusEmpty = document.getElementById('focusEmpty');
 const bodyweightChart = document.getElementById('bodyweightChart');
 const bodyweightHint = document.getElementById('bodyweightHint');
+const nutritionDateBadge = document.getElementById('nutritionDateBadge');
+const nutritionCaloriesInput = document.getElementById('nutritionCaloriesInput');
+const nutritionProteinInput = document.getElementById('nutritionProteinInput');
+const nutritionFatInput = document.getElementById('nutritionFatInput');
+const nutritionCarbsInput = document.getElementById('nutritionCarbsInput');
+const nutritionSummaryCards = document.getElementById('nutritionSummaryCards');
+const nutritionMacroPanel = document.getElementById('nutritionMacroPanel');
 const exportWeekPrimaryBtn = document.getElementById('exportWeekPrimaryBtn');
 const exportWeekSecondaryBtn = document.getElementById('exportWeekSecondaryBtn');
 const exportDurationBtn = document.getElementById('exportDurationBtn');
@@ -125,6 +137,12 @@ const state = {
   bodyweight: '',
   startTime: '',
   endTime: '',
+  nutrition: {
+    calories: '',
+    protein: '',
+    fat: '',
+    carbs: ''
+  },
   updatedAt: 0,
   exercises: []
 };
@@ -139,6 +157,36 @@ const ROUTINE_DAYS = [
   { key: 'saturday', label: 'Zaterdag', index: 6 },
   { key: 'sunday', label: 'Zondag', index: 0 }
 ];
+
+function createEmptyNutrition() {
+  return {
+    calories: '',
+    protein: '',
+    fat: '',
+    carbs: ''
+  };
+}
+
+function normalizeNutritionData(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return {
+    calories: source.calories ?? source.kcal ?? '',
+    protein: source.protein ?? source.proteins ?? source.eiwitten ?? '',
+    fat: source.fat ?? source.fats ?? source.vetten ?? '',
+    carbs: source.carbs ?? source.carbohydrates ?? source.koolhydraten ?? ''
+  };
+}
+
+function mergeNutritionData(primary, fallback) {
+  const preferred = normalizeNutritionData(primary);
+  const backup = normalizeNutritionData(fallback);
+  return {
+    calories: String(preferred.calories ?? '').trim() !== '' ? preferred.calories : backup.calories,
+    protein: String(preferred.protein ?? '').trim() !== '' ? preferred.protein : backup.protein,
+    fat: String(preferred.fat ?? '').trim() !== '' ? preferred.fat : backup.fat,
+    carbs: String(preferred.carbs ?? '').trim() !== '' ? preferred.carbs : backup.carbs
+  };
+}
 
 function createRoutineOption(dayKey = '', index = 1) {
   const label = getRoutineDayLabel(dayKey);
@@ -184,14 +232,16 @@ const AUTO_PULL_MIN_GAP_MS = 8000;
 const AUTO_PULL_DIRTY_GRACE_MS = 1500;
 
 function setActivePage(page, options = {}) {
-  const nextPage = page === 'log' || page === 'dashboard' || page === 'routines' || page === 'progress' || page === 'story' ? page : 'story';
+  const nextPage = page === 'log' || page === 'nutrition' || page === 'dashboard' || page === 'routines' || page === 'progress' || page === 'story' ? page : 'story';
   if (storyPage) storyPage.classList.toggle('active', nextPage === 'story');
   if (logPage) logPage.classList.toggle('active', nextPage === 'log');
+  if (nutritionPage) nutritionPage.classList.toggle('active', nextPage === 'nutrition');
   if (dashboardPage) dashboardPage.classList.toggle('active', nextPage === 'dashboard');
   if (progressPage) progressPage.classList.toggle('active', nextPage === 'progress');
   if (routinesPage) routinesPage.classList.toggle('active', nextPage === 'routines');
   if (pageStoryBtn) pageStoryBtn.classList.toggle('active', nextPage === 'story');
   if (pageLogBtn) pageLogBtn.classList.toggle('active', nextPage === 'log');
+  if (pageNutritionBtn) pageNutritionBtn.classList.toggle('active', nextPage === 'nutrition');
   if (pageDashboardBtn) pageDashboardBtn.classList.toggle('active', nextPage === 'dashboard');
   if (pageProgressBtn) pageProgressBtn.classList.toggle('active', nextPage === 'progress');
   if (pageRoutinesBtn) pageRoutinesBtn.classList.toggle('active', nextPage === 'routines');
@@ -565,6 +615,7 @@ function normalizeAllData(data) {
         bodyweight: day.bodyweight ?? '',
         startTime: typeof day.startTime === 'string' ? day.startTime : '',
         endTime: typeof day.endTime === 'string' ? day.endTime : '',
+        nutrition: normalizeNutritionData(day?.nutrition || day),
         updatedAt: Number(day.updatedAt) || 0,
         exercises: []
       };
@@ -581,6 +632,7 @@ function normalizeAllData(data) {
     if (!normalized[date].endTime && day.endTime) {
       normalized[date].endTime = day.endTime;
     }
+    normalized[date].nutrition = mergeNutritionData(normalized[date].nutrition, day?.nutrition || day);
     if ((Number(day.updatedAt) || 0) > (Number(normalized[date].updatedAt) || 0)) {
       normalized[date].updatedAt = Number(day.updatedAt) || 0;
     }
@@ -596,6 +648,7 @@ function cloneState() {
     bodyweight: state.bodyweight,
     startTime: state.startTime,
     endTime: state.endTime,
+    nutrition: state.nutrition,
     updatedAt: state.updatedAt || 0,
     exercises: state.exercises
   }));
@@ -609,6 +662,7 @@ function loadDay(date) {
   state.bodyweight = day?.bodyweight ?? '';
   state.startTime = day?.startTime || '';
   state.endTime = day?.endTime || '';
+  state.nutrition = normalizeNutritionData(day?.nutrition || day);
   state.updatedAt = Number(day?.updatedAt) || 0;
   state.exercises = (day?.exercises || []).map(ex => ({
     id: ex.id || uid(),
@@ -635,7 +689,24 @@ function loadDay(date) {
   if (bodyweightInput) bodyweightInput.value = state.bodyweight === '' ? '' : state.bodyweight;
   if (startTimeInput) startTimeInput.value = state.startTime || '';
   if (endTimeInput) endTimeInput.value = state.endTime || '';
+  if (nutritionDateInput) nutritionDateInput.value = state.date || '';
+  if (nutritionCaloriesInput) nutritionCaloriesInput.value = state.nutrition.calories === '' ? '' : state.nutrition.calories;
+  if (nutritionProteinInput) nutritionProteinInput.value = state.nutrition.protein === '' ? '' : state.nutrition.protein;
+  if (nutritionFatInput) nutritionFatInput.value = state.nutrition.fat === '' ? '' : state.nutrition.fat;
+  if (nutritionCarbsInput) nutritionCarbsInput.value = state.nutrition.carbs === '' ? '' : state.nutrition.carbs;
   updateRoutineApplyButton({ syncSelect: true });
+  renderNutritionPage();
+}
+
+function switchToDate(nextDate) {
+  const normalizedDate = normalizeDateValue(nextDate);
+  if (!normalizedDate) return;
+  persist();
+  if (dateInput) dateInput.value = normalizedDate;
+  if (nutritionDateInput) nutritionDateInput.value = normalizedDate;
+  loadDay(normalizedDate);
+  renderExercises();
+  refreshProgress();
 }
 
 function persist() {
@@ -668,6 +739,7 @@ function createEmptyDay() {
     bodyweight: '',
     startTime: '',
     endTime: '',
+    nutrition: createEmptyNutrition(),
     updatedAt: 0,
     exercises: []
   };
@@ -683,6 +755,7 @@ function mergeDayData(sourceDay, targetDay) {
       : (source.bodyweight ?? ''),
     startTime: target.startTime || source.startTime || '',
     endTime: target.endTime || source.endTime || '',
+    nutrition: mergeNutritionData(target.nutrition, source.nutrition),
     updatedAt: Date.now(),
     exercises: [
       ...(target.exercises || []),
@@ -1917,6 +1990,135 @@ function renderDayExerciseSummary() {
     card.appendChild(link);
     dayExerciseSummary.appendChild(card);
   });
+}
+
+function hasNutritionContent(day) {
+  const nutrition = normalizeNutritionData(day?.nutrition || day);
+  return Object.values(nutrition).some(value => String(value ?? '').trim() !== '');
+}
+
+function formatNutritionDisplay(value, unit = '') {
+  if (String(value ?? '').trim() === '') return '-';
+  const parsed = parseMaybeNumber(value);
+  if (parsed === '') return '-';
+  const base = typeof parsed === 'number' ? formatNumber(parsed) : String(parsed);
+  return unit ? `${base} ${unit}` : base;
+}
+
+function renderNutritionPage() {
+  if (!nutritionSummaryCards || !nutritionMacroPanel) return;
+
+  if (nutritionDateInput) nutritionDateInput.value = state.date || '';
+  if (nutritionDateBadge) nutritionDateBadge.textContent = formatLongDate(state.date);
+
+  const nutrition = normalizeNutritionData(state.nutrition);
+  const calories = parseMaybeNumber(nutrition.calories);
+  const protein = parseMaybeNumber(nutrition.protein);
+  const fat = parseMaybeNumber(nutrition.fat);
+  const carbs = parseMaybeNumber(nutrition.carbs);
+
+  const proteinKcal = typeof protein === 'number' ? protein * 4 : 0;
+  const fatKcal = typeof fat === 'number' ? fat * 9 : 0;
+  const carbsKcal = typeof carbs === 'number' ? carbs * 4 : 0;
+  const macroKcal = proteinKcal + fatKcal + carbsKcal;
+  const enteredCalories = typeof calories === 'number' ? calories : 0;
+  const referenceCalories = macroKcal || enteredCalories;
+
+  nutritionSummaryCards.innerHTML = '';
+  [
+    {
+      label: 'Calorieen',
+      value: formatNutritionDisplay(calories, 'kcal'),
+      detail: referenceCalories ? `Macro-kcal: ${formatNumber(macroKcal)} kcal` : 'Nog geen calorieen ingevuld',
+      className: 'nutrition-card calories'
+    },
+    {
+      label: 'Eiwitten',
+      value: formatNutritionDisplay(protein, 'g'),
+      detail: proteinKcal ? `${formatNumber(proteinKcal)} kcal uit eiwit` : 'Vul je eiwitten in',
+      className: 'nutrition-card protein'
+    },
+    {
+      label: 'Vetten',
+      value: formatNutritionDisplay(fat, 'g'),
+      detail: fatKcal ? `${formatNumber(fatKcal)} kcal uit vetten` : 'Vul je vetten in',
+      className: 'nutrition-card fat'
+    },
+    {
+      label: 'Koolhydraten',
+      value: formatNutritionDisplay(carbs, 'g'),
+      detail: carbsKcal ? `${formatNumber(carbsKcal)} kcal uit koolhydraten` : 'Vul je koolhydraten in',
+      className: 'nutrition-card carbs'
+    }
+  ].forEach(item => {
+    const card = document.createElement('article');
+    card.className = item.className;
+    card.innerHTML = `
+      <span class="label">${item.label}</span>
+      <strong class="value">${item.value}</strong>
+      <span class="sub">${item.detail}</span>
+    `;
+    nutritionSummaryCards.appendChild(card);
+  });
+
+  if (!hasNutritionContent({ nutrition })) {
+    nutritionMacroPanel.innerHTML = `
+      <div class="empty compact">
+        <p>Vul hierboven je calorieen en macro's in om hier direct een duidelijk dagoverzicht te zien.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const segments = [
+    { label: 'Eiwitten', grams: protein, kcal: proteinKcal, className: 'protein' },
+    { label: 'Vetten', grams: fat, kcal: fatKcal, className: 'fat' },
+    { label: 'Koolhydraten', grams: carbs, kcal: carbsKcal, className: 'carbs' }
+  ];
+
+  const difference = enteredCalories && macroKcal ? enteredCalories - macroKcal : null;
+  const barHtml = segments
+    .filter(segment => segment.kcal > 0)
+    .map(segment => {
+      const ratio = macroKcal > 0 ? (segment.kcal / macroKcal) * 100 : 0;
+      return `<span class="nutrition-macro-segment ${segment.className}" style="width:${ratio}%"></span>`;
+    })
+    .join('');
+
+  const listHtml = segments.map(segment => {
+    const ratio = macroKcal > 0 ? Math.round((segment.kcal / macroKcal) * 100) : 0;
+    return `
+      <div class="nutrition-breakdown-row">
+        <span class="nutrition-breakdown-name">${segment.label}</span>
+        <span class="nutrition-breakdown-value">${formatNutritionDisplay(segment.grams, 'g')}</span>
+        <span class="nutrition-breakdown-kcal">${segment.kcal ? `${formatNumber(segment.kcal)} kcal` : '-'}</span>
+        <span class="nutrition-breakdown-share">${segment.kcal ? `${ratio}%` : '-'}</span>
+      </div>
+    `;
+  }).join('');
+
+  nutritionMacroPanel.innerHTML = `
+    <div class="nutrition-macro-hero">
+      <div>
+        <span class="label">Ingevuld</span>
+        <strong>${formatNutritionDisplay(calories, 'kcal')}</strong>
+      </div>
+      <div>
+        <span class="label">Macro-kcal</span>
+        <strong>${macroKcal ? `${formatNumber(macroKcal)} kcal` : '-'}</strong>
+      </div>
+      <div>
+        <span class="label">Verschil</span>
+        <strong>${difference === null ? '-' : `${difference > 0 ? '+' : ''}${formatNumber(difference)} kcal`}</strong>
+      </div>
+    </div>
+    <div class="nutrition-macro-bar" role="img" aria-label="Verdeling van macro calorieen">
+      ${barHtml || '<span class="nutrition-macro-segment empty" style="width:100%"></span>'}
+    </div>
+    <div class="nutrition-breakdown-grid">
+      ${listHtml}
+    </div>
+  `;
 }
 
 function setVolume(set, exerciseOrMode = null) {
@@ -4757,6 +4959,70 @@ function buildLogbookSetRowsForEntries(entries) {
   return setRows;
 }
 
+function buildNutritionSummaryRowsForEntries(entries, range) {
+  const rangeLabels = {
+    day: 'Dag',
+    week: 'Week',
+    month: 'Maand',
+    year: 'Jaar',
+    all: 'Alles'
+  };
+  const totals = entries.reduce((acc, { day }) => {
+    const nutrition = normalizeNutritionData(day?.nutrition || day);
+    acc.calories += Number(nutrition.calories) || 0;
+    acc.protein += Number(nutrition.protein) || 0;
+    acc.fat += Number(nutrition.fat) || 0;
+    acc.carbs += Number(nutrition.carbs) || 0;
+    return acc;
+  }, { calories: 0, protein: 0, fat: 0, carbs: 0 });
+
+  return [[
+    'Periode',
+    'Ingevulde dagen',
+    'Calorieen totaal',
+    'Gem. calorieen',
+    'Eiwitten totaal (g)',
+    'Vetten totaal (g)',
+    'Koolhydraten totaal (g)'
+  ], [
+    rangeLabels[range] || range,
+    entries.length,
+    totals.calories,
+    entries.length ? totals.calories / entries.length : 0,
+    totals.protein,
+    totals.fat,
+    totals.carbs
+  ]];
+}
+
+function buildNutritionRowsForEntries(entries) {
+  const rows = [[
+    'Datum',
+    'Calorieen',
+    'Eiwitten (g)',
+    'Vetten (g)',
+    'Koolhydraten (g)',
+    'Macro-kcal'
+  ]];
+
+  entries.forEach(({ date, day }) => {
+    const nutrition = normalizeNutritionData(day?.nutrition || day);
+    const protein = Number(nutrition.protein) || 0;
+    const fat = Number(nutrition.fat) || 0;
+    const carbs = Number(nutrition.carbs) || 0;
+    rows.push([
+      date,
+      parseMaybeNumber(nutrition.calories),
+      parseMaybeNumber(nutrition.protein),
+      parseMaybeNumber(nutrition.fat),
+      parseMaybeNumber(nutrition.carbs),
+      protein * 4 + fat * 9 + carbs * 4
+    ]);
+  });
+
+  return rows;
+}
+
 function getLogbookExportRangeEntries(range) {
   const all = getCurrentAllData();
   const selectedDate = state.date || todayISO();
@@ -4770,6 +5036,55 @@ function getLogbookExportRangeEntries(range) {
 
   if (range === 'day') {
     return hasDayExportContent(all[selectedDate])
+      ? [{ date: selectedDate, day: all[selectedDate] }]
+      : [];
+  }
+
+  if (range === 'week') {
+    const weekDates = new Set(getWeekDates(formatWeekInputValue(selectedDate)));
+    return sortedEntries
+      .filter(([date]) => weekDates.has(date))
+      .map(([date, day]) => ({ date, day }));
+  }
+
+  if (range === 'month') {
+    const selected = parseDate(selectedDate);
+    if (!selected) return [];
+    return sortedEntries
+      .filter(([date]) => {
+        const current = parseDate(date);
+        return current && current.getFullYear() === selected.getFullYear() && current.getMonth() === selected.getMonth();
+      })
+      .map(([date, day]) => ({ date, day }));
+  }
+
+  if (range === 'year') {
+    const selected = parseDate(selectedDate);
+    if (!selected) return [];
+    return sortedEntries
+      .filter(([date]) => {
+        const current = parseDate(date);
+        return current && current.getFullYear() === selected.getFullYear();
+      })
+      .map(([date, day]) => ({ date, day }));
+  }
+
+  return [];
+}
+
+function getNutritionExportRangeEntries(range) {
+  const all = getCurrentAllData();
+  const selectedDate = state.date || todayISO();
+  const sortedEntries = Object.entries(all)
+    .filter(([, day]) => hasNutritionContent(day))
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (range === 'all') {
+    return sortedEntries.map(([date, day]) => ({ date, day }));
+  }
+
+  if (range === 'day') {
+    return hasNutritionContent(all[selectedDate])
       ? [{ date: selectedDate, day: all[selectedDate] }]
       : [];
   }
@@ -4820,6 +5135,20 @@ function getLogbookExportFilename(range, referenceDate, entries) {
   return `fitness-logboek-${safeDate}.xlsx`;
 }
 
+function getNutritionExportFilename(range, referenceDate, entries) {
+  const safeDate = referenceDate || todayISO();
+  if (range === 'day') return `fitness-voeding-${safeDate}.xlsx`;
+  if (range === 'week') return `fitness-voeding-week-${formatWeekInputValue(safeDate)}.xlsx`;
+  if (range === 'month') return `fitness-voeding-maand-${safeDate.slice(0, 7)}.xlsx`;
+  if (range === 'year') return `fitness-voeding-jaar-${safeDate.slice(0, 4)}.xlsx`;
+  if (range === 'all') {
+    const first = entries[0]?.date || safeDate;
+    const last = entries[entries.length - 1]?.date || safeDate;
+    return `fitness-voeding-alles-${first}-tot-${last}.xlsx`;
+  }
+  return `fitness-voeding-${safeDate}.xlsx`;
+}
+
 function exportCurrentDayExcel() {
   const range = exportLogRangeSelect?.value || 'day';
   const entries = getLogbookExportRangeEntries(range);
@@ -4834,6 +5163,23 @@ function exportCurrentDayExcel() {
   downloadWorkbookXml(getLogbookExportFilename(range, state.date || todayISO(), entries), [
     { name: 'Samenvatting', rows: summaryRows },
     { name: 'Sets', rows: setRows }
+  ]);
+}
+
+function exportNutritionData() {
+  const range = exportNutritionRangeSelect?.value || 'day';
+  const entries = getNutritionExportRangeEntries(range);
+  if (!entries.length) {
+    alert('Geen voedingsdata gevonden voor deze periode.');
+    return;
+  }
+
+  const summaryRows = buildNutritionSummaryRowsForEntries(entries, range);
+  const dataRows = buildNutritionRowsForEntries(entries);
+
+  downloadWorkbookXml(getNutritionExportFilename(range, state.date || todayISO(), entries), [
+    { name: 'Samenvatting', rows: summaryRows },
+    { name: 'Voeding', rows: dataRows }
   ]);
 }
 
@@ -5577,6 +5923,13 @@ if (pageLogBtn) {
   });
 }
 
+if (pageNutritionBtn) {
+  pageNutritionBtn.addEventListener('click', () => {
+    renderNutritionPage();
+    setActivePage('nutrition');
+  });
+}
+
 if (pageStoryBtn) {
   pageStoryBtn.addEventListener('click', () => {
     renderProgressTimeline();
@@ -5606,6 +5959,7 @@ addExerciseBtn.addEventListener('click', addExercise);
 addExerciseMiniBtn.addEventListener('click', addExercise);
 addExerciseEmptyBtn.addEventListener('click', addExercise);
 if (exportExcelLogBtn) exportExcelLogBtn.addEventListener('click', exportCurrentDayExcel);
+if (exportNutritionBtn) exportNutritionBtn.addEventListener('click', exportNutritionData);
 if (moveLogDateBtn) moveLogDateBtn.addEventListener('click', moveCurrentLogToDate);
 if (addRoutineToDayBtn) addRoutineToDayBtn.addEventListener('click', addRoutineExercisesToCurrentDay);
 if (addRoutineExerciseBtn) addRoutineExerciseBtn.addEventListener('click', addRoutineExercise);
@@ -5628,6 +5982,38 @@ bodyweightInput.addEventListener('input', () => {
   state.bodyweight = bodyweightInput.value;
   persist();
 });
+
+if (nutritionCaloriesInput) {
+  nutritionCaloriesInput.addEventListener('input', () => {
+    state.nutrition.calories = nutritionCaloriesInput.value;
+    renderNutritionPage();
+    persist();
+  });
+}
+
+if (nutritionProteinInput) {
+  nutritionProteinInput.addEventListener('input', () => {
+    state.nutrition.protein = nutritionProteinInput.value;
+    renderNutritionPage();
+    persist();
+  });
+}
+
+if (nutritionFatInput) {
+  nutritionFatInput.addEventListener('input', () => {
+    state.nutrition.fat = nutritionFatInput.value;
+    renderNutritionPage();
+    persist();
+  });
+}
+
+if (nutritionCarbsInput) {
+  nutritionCarbsInput.addEventListener('input', () => {
+    state.nutrition.carbs = nutritionCarbsInput.value;
+    renderNutritionPage();
+    persist();
+  });
+}
 
 if (startTimeInput) {
   startTimeInput.addEventListener('input', () => {
@@ -5952,11 +6338,14 @@ if (syncTestBtn) {
 }
 
 dateInput.addEventListener('change', () => {
-  persist();
-  loadDay(dateInput.value);
-  renderExercises();
-  refreshProgress();
+  switchToDate(dateInput.value);
 });
+
+if (nutritionDateInput) {
+  nutritionDateInput.addEventListener('change', () => {
+    switchToDate(nutritionDateInput.value);
+  });
+}
 
 function getCloudPayload() {
   const all = loadAll();

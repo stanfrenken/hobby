@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260422a" />
+  <link rel="stylesheet" href="styles.css?v=20260505a" />
 </head>
 <body>
   <div class="bg"></div>
@@ -20,6 +20,7 @@
       <nav class="page-nav" aria-label="Navigatie">
         <button id="pageStoryBtn" class="page-tab active" type="button">Story</button>
         <button id="pageLogBtn" class="page-tab" type="button">Logboek</button>
+        <button id="pageNutritionBtn" class="page-tab" type="button">Voeding</button>
         <button id="pageDashboardBtn" class="page-tab" type="button">Dashboard</button>
         <button id="pageProgressBtn" class="page-tab" type="button">Check-in</button>
         <button id="pageRoutinesBtn" class="page-tab" type="button">Vaste dagen</button>
@@ -292,6 +293,84 @@
               <p class="hint">Data wordt lokaal opgeslagen in je browser.</p>
             </div>
           </section>
+        </div>
+      </section>
+
+      <section id="nutritionPage" class="page">
+        <div class="page-shell">
+          <div class="controls nutrition-toolbar">
+            <label class="control">
+              <span>Datum</span>
+              <input id="nutritionDateInput" type="date" />
+            </label>
+            <div class="control nutrition-sync-note">
+              <span>Gekoppeld aan je logboek</span>
+              <p>Deze datum loopt gelijk met wat je in Logboek kiest.</p>
+            </div>
+            <div class="control buttons nutrition-export-actions">
+              <label class="control inline export-log-range">
+                <span>Excel</span>
+                <select id="exportNutritionRange">
+                  <option value="day">Dag</option>
+                  <option value="week">Week</option>
+                  <option value="month">Maand</option>
+                  <option value="year">Jaar</option>
+                  <option value="all">Alles</option>
+                </select>
+              </label>
+              <button id="exportNutritionBtn" class="ghost small" type="button">Excel</button>
+            </div>
+          </div>
+
+          <div class="nutrition-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Voeding van de dag</h2>
+                  <p>Vul je dagtotalen in voor calorieen en macro's.</p>
+                </div>
+                <span id="nutritionDateBadge" class="badge">-</span>
+              </div>
+              <div class="nutrition-form-grid">
+                <label class="control nutrition-field nutrition-field-calories">
+                  <span>Aantal calorieen</span>
+                  <input id="nutritionCaloriesInput" type="number" min="0" step="1" placeholder="Bijv. 2450" />
+                </label>
+                <label class="control nutrition-field nutrition-field-protein">
+                  <span>Eiwitten (g)</span>
+                  <input id="nutritionProteinInput" type="number" min="0" step="1" placeholder="Bijv. 180" />
+                </label>
+                <label class="control nutrition-field nutrition-field-fat">
+                  <span>Vetten (g)</span>
+                  <input id="nutritionFatInput" type="number" min="0" step="1" placeholder="Bijv. 70" />
+                </label>
+                <label class="control nutrition-field nutrition-field-carbs">
+                  <span>Koolhydraten (g)</span>
+                  <input id="nutritionCarbsInput" type="number" min="0" step="1" placeholder="Bijv. 240" />
+                </label>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Dagoverzicht</h2>
+                  <p>Een snelle blik op je energie en macro's.</p>
+                </div>
+              </div>
+              <div id="nutritionSummaryCards" class="nutrition-summary-cards"></div>
+            </section>
+
+            <section class="panel panel-wide">
+              <div class="panel-header">
+                <div>
+                  <h2>Macroverdeling</h2>
+                  <p>Gebaseerd op kcal uit eiwitten, vetten en koolhydraten.</p>
+                </div>
+              </div>
+              <div id="nutritionMacroPanel" class="nutrition-macro-panel"></div>
+            </section>
+          </div>
         </div>
       </section>
 
@@ -624,7 +703,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260422a"></script>
+  <script src="app.js?v=20260505a"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>
