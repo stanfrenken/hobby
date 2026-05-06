@@ -3317,7 +3317,8 @@ function updateDurationReadout(readoutEl, hit) {
     readoutEl.textContent = 'Beweeg over de chart voor details.';
     return;
   }
-  readoutEl.textContent = `${formatShortDate(hit.date)} • ${formatNumber(hit.minutes)} min • ${formatTrainingWindow(hit.startTime, hit.endTime)}`;
+  const sessionPart = hit.sessionName ? ` • ${hit.sessionName}` : '';
+  readoutEl.textContent = `${formatShortDate(hit.date)} • ${formatNumber(hit.minutes)} min • ${formatTrainingWindow(hit.startTime, hit.endTime)}${sessionPart}`;
 }
 
 function bindDurationChartHover(canvas, hitboxes, readoutEl) {
@@ -3346,7 +3347,7 @@ function bindDurationChartHover(canvas, hitboxes, readoutEl) {
 
     updateDurationReadout(canvas._durationReadout, hit);
     showChartTooltip(
-      `<span class="title">${formatShortDate(hit.date)}</span><span class="value">${formatNumber(hit.minutes)} minuten</span><span class="title">Start: ${hit.startTime || '-'}</span><span class="title">Einde: ${hit.endTime || '-'}</span>`,
+      `<span class="title">${formatShortDate(hit.date)}</span><span class="value">${formatNumber(hit.minutes)} minuten</span><span class="title">Start: ${hit.startTime || '-'}</span><span class="title">Einde: ${hit.endTime || '-'}</span><span class="title">Sessie: ${hit.sessionName || '-'}</span>`,
       position.clientX,
       position.clientY
     );
@@ -3408,13 +3409,50 @@ function getCountAxisScale(maxValue) {
   };
 }
 
+function getSessionNameBucket(name) {
+  const label = String(name || '').trim();
+  const normalized = label.toLocaleLowerCase('nl-NL');
+  if (!normalized) {
+    return {
+      key: '__zonder_naam__',
+      label: 'Zonder naam'
+    };
+  }
+  return {
+    key: normalized,
+    label
+  };
+}
+
+function summarizeSessionNamesByDates(all, dates) {
+  const summaryMap = new Map();
+  (dates || []).forEach(date => {
+    const day = all?.[date];
+    if (!isWorkoutDay(day)) return;
+    const bucket = getSessionNameBucket(day?.sessionName);
+    if (!summaryMap.has(bucket.key)) {
+      summaryMap.set(bucket.key, { label: bucket.label, count: 0 });
+    }
+    summaryMap.get(bucket.key).count += 1;
+  });
+
+  return Array.from(summaryMap.values())
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'nl-NL'));
+}
+
+function formatSessionNameBreakdown(summary) {
+  if (!Array.isArray(summary) || !summary.length) return 'Geen sessienamen';
+  return summary.map(item => `${item.label}: ${item.count}x`).join(' • ');
+}
+
 function updateVisitCountReadout(readoutEl, hit) {
   if (!readoutEl) return;
   if (!hit) {
     readoutEl.textContent = 'Beweeg over de chart voor details.';
     return;
   }
-  readoutEl.textContent = `${formatVisitPeriodLabel(hit)} • ${hit.count}x fitness`;
+  const breakdown = formatSessionNameBreakdown(hit.sessionBreakdown);
+  readoutEl.textContent = `${formatVisitPeriodLabel(hit)} • ${hit.count}x fitness${breakdown ? ` • ${breakdown}` : ''}`;
 }
 
 function bindVisitCountChartHover(canvas, hitboxes, readoutEl) {
@@ -3443,7 +3481,7 @@ function bindVisitCountChartHover(canvas, hitboxes, readoutEl) {
 
     updateVisitCountReadout(canvas._visitReadout, hit);
     showChartTooltip(
-      `<span class="title">${formatVisitPeriodLabel(hit)}</span><span class="value">${hit.count}x fitness</span>`,
+      `<span class="title">${formatVisitPeriodLabel(hit)}</span><span class="value">${hit.count}x fitness</span><span class="title">${formatSessionNameBreakdown(hit.sessionBreakdown)}</span>`,
       position.clientX,
       position.clientY
     );
@@ -3645,6 +3683,7 @@ function drawDurationBarChart(canvas, rows, options = {}) {
       height: Math.max(height, 4),
       date: row.date,
       minutes: row.minutes,
+      sessionName: row.sessionName || '',
       startTime: row.startTime,
       endTime: row.endTime
     });
@@ -3778,13 +3817,15 @@ function buildVisitCountRows(all, granularity = 'week') {
   if (granularity === 'day') {
     for (let cursor = parseDate(first); cursor && cursor <= parseDate(last); cursor.setDate(cursor.getDate() + 1)) {
       const date = toIsoDateString(cursor);
+      const sessionBreakdown = summarizeSessionNamesByDates(all, [date]);
       rows.push({
         granularity: 'day',
         date,
         startDate: date,
         endDate: date,
         label: formatLongDate(date),
-        count: workoutSet.has(date) ? 1 : 0
+        count: workoutSet.has(date) ? 1 : 0,
+        sessionBreakdown
       });
     }
     return rows;
@@ -3799,13 +3840,15 @@ function buildVisitCountRows(all, granularity = 'week') {
         return toIsoDateString(next);
       });
       const endDate = dates[dates.length - 1];
+      const sessionBreakdown = summarizeSessionNamesByDates(all, dates);
       rows.push({
         granularity: 'week',
         code: formatWeekInputValue(startDate),
         startDate,
         endDate,
         label: `Week ${formatWeekInputValue(startDate).slice(-2)}`,
-        count: dates.reduce((sum, date) => sum + (workoutSet.has(date) ? 1 : 0), 0)
+        count: dates.reduce((sum, date) => sum + (workoutSet.has(date) ? 1 : 0), 0),
+        sessionBreakdown
       });
     }
     return rows;
@@ -3817,16 +3860,18 @@ function buildVisitCountRows(all, granularity = 'week') {
       const endDate = toIsoDateString(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0));
       const year = cursor.getFullYear();
       const month = cursor.getMonth();
-      const count = workoutDates.filter(date => {
+      const dates = workoutDates.filter(date => {
         const parsed = parseDate(date);
         return parsed && parsed.getFullYear() === year && parsed.getMonth() === month;
-      }).length;
+      });
+      const count = dates.length;
       rows.push({
         granularity: 'month',
         startDate,
         endDate,
         label: new Intl.DateTimeFormat('nl-NL', { month: 'long', year: 'numeric' }).format(cursor),
-        count
+        count,
+        sessionBreakdown: summarizeSessionNamesByDates(all, dates)
       });
     }
     return rows;
@@ -3836,16 +3881,18 @@ function buildVisitCountRows(all, granularity = 'week') {
     const startDate = toIsoDateString(cursor);
     const endDate = toIsoDateString(new Date(cursor.getFullYear(), 11, 31));
     const year = cursor.getFullYear();
-    const count = workoutDates.filter(date => {
+    const dates = workoutDates.filter(date => {
       const parsed = parseDate(date);
       return parsed && parsed.getFullYear() === year;
-    }).length;
+    });
+    const count = dates.length;
     rows.push({
       granularity: 'year',
       startDate,
       endDate,
       label: String(year),
-      count
+      count,
+      sessionBreakdown: summarizeSessionNamesByDates(all, dates)
     });
   }
 
@@ -4280,6 +4327,7 @@ function getDurationRows(all, dates = null) {
 
   return entries.map(([date, day]) => ({
     date,
+    sessionName: String(day?.sessionName || '').trim(),
     startTime: day?.startTime || '',
     endTime: day?.endTime || '',
     minutes: computeTrainingDurationMinutes(day)
