@@ -471,7 +471,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 
 .nutrition-form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -483,6 +483,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 }
 
 .nutrition-field-calories {
+  grid-column: 1 / -1;
   background: linear-gradient(145deg, rgba(194,85,45,0.12), rgba(255,250,243,0.98));
 }
 
@@ -498,8 +499,17 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   background: linear-gradient(145deg, rgba(87,126,190,0.14), rgba(255,250,243,0.98));
 }
 
+.nutrition-field-steps {
+  background: linear-gradient(145deg, rgba(76,137,92,0.14), rgba(255,250,243,0.98));
+}
+
+.nutrition-field-sleep {
+  background: linear-gradient(145deg, rgba(104,92,171,0.14), rgba(255,250,243,0.98));
+}
+
 .nutrition-summary-cards {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -528,6 +538,10 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   line-height: 1.45;
 }
 
+.nutrition-card.calories {
+  grid-column: 1 / -1;
+}
+
 .nutrition-card.calories .value {
   color: var(--accent);
 }
@@ -542,6 +556,14 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 
 .nutrition-card.carbs .value {
   color: #355ea0;
+}
+
+.nutrition-card.steps .value {
+  color: #3e7f4f;
+}
+
+.nutrition-card.sleep .value {
+  color: #5b4ea8;
 }
 
 .nutrition-macro-panel {
@@ -755,6 +777,10 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 }
 
 .exercise-notes { min-height: 70px; resize: vertical; }
+
+.exercise-rating-control input {
+  max-width: 140px;
+}
 
 .exercise-stats { display: grid; gap: 10px; }
 
@@ -1251,6 +1277,18 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   font-weight: 600;
 }
 
+.focus-rating-block {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.focus-rating-head {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
 .progress-table {
   display: grid;
   gap: 8px;
@@ -1592,6 +1630,12 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   }
   .nutrition-breakdown-row {
     grid-template-columns: 1fr 1fr;
+  }
+  .nutrition-summary-cards {
+    grid-template-columns: 1fr;
+  }
+  .nutrition-card.calories {
+    grid-column: auto;
   }
   .exercise-meta { grid-template-columns: 1fr; }
   .muscle-grid { grid-template-columns: 1fr; }

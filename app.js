@@ -17,6 +17,7 @@ const sessionNameInput = document.getElementById('sessionName');
 const bodyweightInput = document.getElementById('bodyweightInput');
 const startTimeInput = document.getElementById('startTimeInput');
 const endTimeInput = document.getElementById('endTimeInput');
+const dayRatingInput = document.getElementById('dayRatingInput');
 const moveLogDateInput = document.getElementById('moveLogDateInput');
 const moveLogDateBtn = document.getElementById('moveLogDateBtn');
 const routineSourceDaySelect = document.getElementById('routineSourceDay');
@@ -52,10 +53,12 @@ const weekPrimaryChart = document.getElementById('weekPrimaryChart');
 const weekSecondaryChart = document.getElementById('weekSecondaryChart');
 const durationChart = document.getElementById('durationChart');
 const visitCountChart = document.getElementById('visitCountChart');
+const dayRatingChart = document.getElementById('dayRatingChart');
 const weekPrimaryReadout = document.getElementById('weekPrimaryReadout');
 const weekSecondaryReadout = document.getElementById('weekSecondaryReadout');
 const durationReadout = document.getElementById('durationReadout');
 const visitCountReadout = document.getElementById('visitCountReadout');
+const dayRatingReadout = document.getElementById('dayRatingReadout');
 const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
 const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
 const dashboardWeekInput = document.getElementById('dashboardWeek');
@@ -65,6 +68,8 @@ const visitCountGranularitySelect = document.getElementById('visitCountGranulari
 const focusName = document.getElementById('focusName');
 const focusExerciseSelect = document.getElementById('focusExerciseSelect');
 const focusChart = document.getElementById('focusChart');
+const focusRatingChart = document.getElementById('focusRatingChart');
+const focusRatingReadout = document.getElementById('focusRatingReadout');
 const focusMetrics = document.getElementById('focusMetrics');
 const focusStartNow = document.getElementById('focusStartNow');
 const focusTable = document.getElementById('focusTable');
@@ -76,6 +81,9 @@ const nutritionCaloriesInput = document.getElementById('nutritionCaloriesInput')
 const nutritionProteinInput = document.getElementById('nutritionProteinInput');
 const nutritionFatInput = document.getElementById('nutritionFatInput');
 const nutritionCarbsInput = document.getElementById('nutritionCarbsInput');
+const nutritionStepsInput = document.getElementById('nutritionStepsInput');
+const nutritionBedTimeInput = document.getElementById('nutritionBedTimeInput');
+const nutritionWakeTimeInput = document.getElementById('nutritionWakeTimeInput');
 const nutritionSummaryCards = document.getElementById('nutritionSummaryCards');
 const nutritionMacroPanel = document.getElementById('nutritionMacroPanel');
 const exportWeekPrimaryBtn = document.getElementById('exportWeekPrimaryBtn');
@@ -137,11 +145,15 @@ const state = {
   bodyweight: '',
   startTime: '',
   endTime: '',
+  dayRating: '',
   nutrition: {
     calories: '',
     protein: '',
     fat: '',
-    carbs: ''
+    carbs: '',
+    steps: '',
+    bedTime: '',
+    wakeTime: ''
   },
   updatedAt: 0,
   exercises: []
@@ -163,7 +175,10 @@ function createEmptyNutrition() {
     calories: '',
     protein: '',
     fat: '',
-    carbs: ''
+    carbs: '',
+    steps: '',
+    bedTime: '',
+    wakeTime: ''
   };
 }
 
@@ -173,7 +188,10 @@ function normalizeNutritionData(raw) {
     calories: source.calories ?? source.kcal ?? '',
     protein: source.protein ?? source.proteins ?? source.eiwitten ?? '',
     fat: source.fat ?? source.fats ?? source.vetten ?? '',
-    carbs: source.carbs ?? source.carbohydrates ?? source.koolhydraten ?? ''
+    carbs: source.carbs ?? source.carbohydrates ?? source.koolhydraten ?? '',
+    steps: source.steps ?? source.stepCount ?? '',
+    bedTime: source.bedTime ?? source.bedtime ?? '',
+    wakeTime: source.wakeTime ?? source.waketime ?? source.wakeUpTime ?? ''
   };
 }
 
@@ -184,8 +202,18 @@ function mergeNutritionData(primary, fallback) {
     calories: String(preferred.calories ?? '').trim() !== '' ? preferred.calories : backup.calories,
     protein: String(preferred.protein ?? '').trim() !== '' ? preferred.protein : backup.protein,
     fat: String(preferred.fat ?? '').trim() !== '' ? preferred.fat : backup.fat,
-    carbs: String(preferred.carbs ?? '').trim() !== '' ? preferred.carbs : backup.carbs
+    carbs: String(preferred.carbs ?? '').trim() !== '' ? preferred.carbs : backup.carbs,
+    steps: String(preferred.steps ?? '').trim() !== '' ? preferred.steps : backup.steps,
+    bedTime: String(preferred.bedTime ?? '').trim() !== '' ? preferred.bedTime : backup.bedTime,
+    wakeTime: String(preferred.wakeTime ?? '').trim() !== '' ? preferred.wakeTime : backup.wakeTime
   };
+}
+
+function normalizeRatingValue(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '';
+  return Math.min(10, Math.max(0, num));
 }
 
 function createRoutineOption(dayKey = '', index = 1) {
@@ -590,6 +618,7 @@ function normalizeAllData(data) {
       id: ex?.id || uid(),
       name: ex?.name || '',
       notes: ex?.notes || '',
+      rating: normalizeRatingValue(ex?.rating),
       primaryGroup: sanitizeMuscleGroup(ex?.primaryGroup) || '',
       secondaryGroups: normalizeSecondaryGroups(ex?.secondaryGroups ?? ex?.secondaryGroup, sanitizeMuscleGroup(ex?.primaryGroup) || ''),
       splitWeightMode: !!ex?.splitWeightMode || (Array.isArray(ex?.sets) && ex.sets.some(set => (set?.weightMode === 'split') || (set?.leftWeight ?? '') !== '' || (set?.rightWeight ?? '') !== '')),
@@ -615,6 +644,7 @@ function normalizeAllData(data) {
         bodyweight: day.bodyweight ?? '',
         startTime: typeof day.startTime === 'string' ? day.startTime : '',
         endTime: typeof day.endTime === 'string' ? day.endTime : '',
+        dayRating: normalizeRatingValue(day?.dayRating ?? day?.rating),
         nutrition: normalizeNutritionData(day?.nutrition || day),
         updatedAt: Number(day.updatedAt) || 0,
         exercises: []
@@ -632,6 +662,9 @@ function normalizeAllData(data) {
     if (!normalized[date].endTime && day.endTime) {
       normalized[date].endTime = day.endTime;
     }
+    if (normalized[date].dayRating === '' && day?.dayRating !== undefined) {
+      normalized[date].dayRating = normalizeRatingValue(day.dayRating);
+    }
     normalized[date].nutrition = mergeNutritionData(normalized[date].nutrition, day?.nutrition || day);
     if ((Number(day.updatedAt) || 0) > (Number(normalized[date].updatedAt) || 0)) {
       normalized[date].updatedAt = Number(day.updatedAt) || 0;
@@ -648,6 +681,7 @@ function cloneState() {
     bodyweight: state.bodyweight,
     startTime: state.startTime,
     endTime: state.endTime,
+    dayRating: state.dayRating,
     nutrition: state.nutrition,
     updatedAt: state.updatedAt || 0,
     exercises: state.exercises
@@ -662,13 +696,15 @@ function loadDay(date) {
   state.bodyweight = day?.bodyweight ?? '';
   state.startTime = day?.startTime || '';
   state.endTime = day?.endTime || '';
+  state.dayRating = normalizeRatingValue(day?.dayRating ?? day?.rating);
   state.nutrition = normalizeNutritionData(day?.nutrition || day);
   state.updatedAt = Number(day?.updatedAt) || 0;
   state.exercises = (day?.exercises || []).map(ex => ({
-    id: ex.id || uid(),
-    name: ex.name || '',
-    notes: ex.notes || '',
-    primaryGroup: sanitizeMuscleGroup(ex.primaryGroup) || '',
+      id: ex.id || uid(),
+      name: ex.name || '',
+      notes: ex.notes || '',
+      rating: normalizeRatingValue(ex.rating),
+      primaryGroup: sanitizeMuscleGroup(ex.primaryGroup) || '',
     secondaryGroups: normalizeSecondaryGroups(ex.secondaryGroups ?? ex.secondaryGroup, sanitizeMuscleGroup(ex.primaryGroup) || ''),
     splitWeightMode: !!ex.splitWeightMode || (Array.isArray(ex.sets) && ex.sets.some(set => (set?.weightMode === 'split') || (set?.leftWeight ?? '') !== '' || (set?.rightWeight ?? '') !== '')),
     sets: (ex.sets || []).map(set => ({
@@ -689,11 +725,15 @@ function loadDay(date) {
   if (bodyweightInput) bodyweightInput.value = state.bodyweight === '' ? '' : state.bodyweight;
   if (startTimeInput) startTimeInput.value = state.startTime || '';
   if (endTimeInput) endTimeInput.value = state.endTime || '';
+  if (dayRatingInput) dayRatingInput.value = state.dayRating === '' ? '' : state.dayRating;
   if (nutritionDateInput) nutritionDateInput.value = state.date || '';
   if (nutritionCaloriesInput) nutritionCaloriesInput.value = state.nutrition.calories === '' ? '' : state.nutrition.calories;
   if (nutritionProteinInput) nutritionProteinInput.value = state.nutrition.protein === '' ? '' : state.nutrition.protein;
   if (nutritionFatInput) nutritionFatInput.value = state.nutrition.fat === '' ? '' : state.nutrition.fat;
   if (nutritionCarbsInput) nutritionCarbsInput.value = state.nutrition.carbs === '' ? '' : state.nutrition.carbs;
+  if (nutritionStepsInput) nutritionStepsInput.value = state.nutrition.steps === '' ? '' : state.nutrition.steps;
+  if (nutritionBedTimeInput) nutritionBedTimeInput.value = state.nutrition.bedTime || '';
+  if (nutritionWakeTimeInput) nutritionWakeTimeInput.value = state.nutrition.wakeTime || '';
   updateRoutineApplyButton({ syncSelect: true });
   renderNutritionPage();
 }
@@ -739,6 +779,7 @@ function createEmptyDay() {
     bodyweight: '',
     startTime: '',
     endTime: '',
+    dayRating: '',
     nutrition: createEmptyNutrition(),
     updatedAt: 0,
     exercises: []
@@ -755,6 +796,9 @@ function mergeDayData(sourceDay, targetDay) {
       : (source.bodyweight ?? ''),
     startTime: target.startTime || source.startTime || '',
     endTime: target.endTime || source.endTime || '',
+    dayRating: target.dayRating !== '' && target.dayRating !== undefined && target.dayRating !== null
+      ? normalizeRatingValue(target.dayRating)
+      : normalizeRatingValue(source.dayRating),
     nutrition: mergeNutritionData(target.nutrition, source.nutrition),
     updatedAt: Date.now(),
     exercises: [
@@ -819,6 +863,7 @@ function addExercise() {
     id: uid(),
     name: '',
     notes: '',
+    rating: '',
     primaryGroup: '',
     secondaryGroups: [],
     splitWeightMode: false,
@@ -1427,6 +1472,7 @@ function renderExercises() {
     const nameInput = card.querySelector('.exercise-name');
     const selectInput = card.querySelector('.exercise-select');
     const notesInput = card.querySelector('.exercise-notes');
+    const ratingInput = card.querySelector('.exercise-rating');
     const primarySelect = card.querySelector('.exercise-primary');
     const secondaryPicker = card.querySelector('.exercise-secondary-picker');
     const previousSessionEl = card.querySelector('.exercise-last-session');
@@ -1434,6 +1480,7 @@ function renderExercises() {
     nameInput.value = exercise.name;
     populateExerciseSelect(selectInput, catalog, exercise.name);
     notesInput.value = exercise.notes;
+    if (ratingInput) ratingInput.value = exercise.rating === '' ? '' : exercise.rating;
     if (splitModeInput) splitModeInput.checked = !!exercise.splitWeightMode;
     populateMuscleSelect(primarySelect, MUSCLE_SELECT_OPTIONS);
     const displayProfile = getAutoExerciseProfile(exercise.name, catalog);
@@ -1817,6 +1864,7 @@ function addRoutineExercisesToCurrentDay() {
       id: uid(),
       name: item.name,
       notes: item.notes || '',
+      rating: '',
       primaryGroup: item.primaryGroup || '',
       secondaryGroups: [...(item.secondaryGroups || [])],
       splitWeightMode: false,
@@ -1976,6 +2024,7 @@ function renderDayExerciseSummary() {
       <div><span class="label">Laatste keer:</span> <span>${previousSession ? formatShortDate(previousSession.date) : '-'}</span></div>
       <div><span class="label">Vorige sets:</span> <span>${previousSession ? formatFocusSetsDetail(previousSession.sets) : 'Nog geen eerdere sessie'}</span></div>
       <div><span class="label">Vorig volume:</span> <span>${previousSession ? `${formatNumber(previousSession.volume)} kg` : '-'}</span></div>
+      <div><span class="label">Tevredenheid:</span> <span>${exercise.rating === '' ? '-' : `${formatNumber(exercise.rating)} / 10`}</span></div>
     `;
 
     const link = document.createElement('button');
@@ -1997,12 +2046,33 @@ function hasNutritionContent(day) {
   return Object.values(nutrition).some(value => String(value ?? '').trim() !== '');
 }
 
+function hasMacroContent(nutrition) {
+  const normalized = normalizeNutritionData(nutrition);
+  return ['calories', 'protein', 'fat', 'carbs'].some(key => String(normalized[key] ?? '').trim() !== '');
+}
+
 function formatNutritionDisplay(value, unit = '') {
   if (String(value ?? '').trim() === '') return '-';
   const parsed = parseMaybeNumber(value);
   if (parsed === '') return '-';
   const base = typeof parsed === 'number' ? formatNumber(parsed) : String(parsed);
   return unit ? `${base} ${unit}` : base;
+}
+
+function computeSleepDurationMinutes(bedTime, wakeTime) {
+  const bed = parseTimeToMinutes(bedTime);
+  const wake = parseTimeToMinutes(wakeTime);
+  if (bed === null || wake === null) return 0;
+  if (wake >= bed) return wake - bed;
+  return (24 * 60 - bed) + wake;
+}
+
+function formatSleepDuration(minutes) {
+  if (!minutes) return '-';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!rest) return `${hours}u`;
+  return `${hours}u ${rest}m`;
 }
 
 function renderNutritionPage() {
@@ -2023,6 +2093,11 @@ function renderNutritionPage() {
   const macroKcal = proteinKcal + fatKcal + carbsKcal;
   const enteredCalories = typeof calories === 'number' ? calories : 0;
   const referenceCalories = macroKcal || enteredCalories;
+  const steps = parseMaybeNumber(nutrition.steps);
+  const sleepMinutes = computeSleepDurationMinutes(nutrition.bedTime, nutrition.wakeTime);
+  const sleepWindow = nutrition.bedTime || nutrition.wakeTime
+    ? `${nutrition.bedTime || '-'} - ${nutrition.wakeTime || '-'}`
+    : 'Nog geen slaapvenster ingevuld';
 
   nutritionSummaryCards.innerHTML = '';
   [
@@ -2049,6 +2124,18 @@ function renderNutritionPage() {
       value: formatNutritionDisplay(carbs, 'g'),
       detail: carbsKcal ? `${formatNumber(carbsKcal)} kcal uit koolhydraten` : 'Vul je koolhydraten in',
       className: 'nutrition-card carbs'
+    },
+    {
+      label: 'Stappen',
+      value: formatNutritionDisplay(steps),
+      detail: steps !== '' ? 'Beweging van deze dag' : 'Vul je stappen in',
+      className: 'nutrition-card steps'
+    },
+    {
+      label: 'Slaap',
+      value: formatSleepDuration(sleepMinutes),
+      detail: sleepWindow,
+      className: 'nutrition-card sleep'
     }
   ].forEach(item => {
     const card = document.createElement('article');
@@ -2061,10 +2148,10 @@ function renderNutritionPage() {
     nutritionSummaryCards.appendChild(card);
   });
 
-  if (!hasNutritionContent({ nutrition })) {
+  if (!hasMacroContent(nutrition)) {
     nutritionMacroPanel.innerHTML = `
       <div class="empty compact">
-        <p>Vul hierboven je calorieen en macro's in om hier direct een duidelijk dagoverzicht te zien.</p>
+        <p>Vul hierboven je calorieen en macro's in om hier direct je macroverdeling te zien.</p>
       </div>
     `;
     return;
@@ -2333,6 +2420,9 @@ function handleInputChange(target) {
   if (target.classList.contains('exercise-notes')) {
     exercise.notes = target.value;
   }
+  if (target.classList.contains('exercise-rating')) {
+    exercise.rating = normalizeRatingValue(target.value);
+  }
   if (target.classList.contains('exercise-primary')) {
     exercise.primaryGroup = target.value === 'Automatisch' ? '' : target.value;
     exercise.secondaryGroups = normalizeSecondaryGroups(exercise.secondaryGroups, exercise.primaryGroup);
@@ -2430,6 +2520,7 @@ function refreshProgress() {
   renderBodyweightTrend(all);
   renderTrainingDurationTrend(all);
   renderVisitCountTrend(all);
+  renderDayRatingTrend(all);
 }
 
 function collectExerciseNames(all) {
@@ -3069,6 +3160,17 @@ function updateChartReadout(readoutEl, hit) {
   readoutEl.textContent = `${formatShortDate(hit.date)} • ${hit.group}: ${formatNumber(hit.value)} kg • Dagtotaal: ${formatNumber(hit.total)} kg`;
 }
 
+function updateLineChartReadout(readoutEl, hit, formatter) {
+  if (!readoutEl) return;
+  if (!hit) {
+    readoutEl.textContent = 'Beweeg over de chart voor details.';
+    return;
+  }
+  readoutEl.textContent = typeof formatter === 'function'
+    ? formatter(hit)
+    : `${formatShortDate(hit.date)} • ${formatNumber(hit.volume)} kg`;
+}
+
 function getCanvasPointer(canvas, event) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -3157,10 +3259,14 @@ function bindStackedChartHover(canvas, hitboxes, readoutEl) {
   canvas.addEventListener('touchend', leaveHandler, { passive: true });
 }
 
-function bindLineChartHover(canvas, hitboxes) {
+function bindLineChartHover(canvas, hitboxes, options = {}) {
   if (!canvas) return;
   canvas._lineHitboxes = hitboxes;
+  canvas._lineTooltipBuilder = options.tooltipBuilder || null;
+  canvas._lineReadout = options.readoutEl || null;
+  canvas._lineReadoutFormatter = options.readoutFormatter || null;
   canvas.classList.toggle('chart-hover', hitboxes.length > 0);
+  updateLineChartReadout(canvas._lineReadout, null, canvas._lineReadoutFormatter);
 
   if (canvas._lineHoverBound) return;
   canvas._lineHoverBound = true;
@@ -3175,11 +3281,15 @@ function bindLineChartHover(canvas, hitboxes) {
 
     if (!hit) {
       hideChartTooltip();
+      updateLineChartReadout(canvas._lineReadout, null, canvas._lineReadoutFormatter);
       return false;
     }
 
+    updateLineChartReadout(canvas._lineReadout, hit, canvas._lineReadoutFormatter);
     showChartTooltip(
-      `<span class="title">${formatShortDate(hit.date)}</span><span class="value">Totaal volume: ${formatNumber(hit.volume)} kg</span><span class="title">Sets x reps x gewicht</span><span class="value">${hit.setsDetail || '-'}</span>`,
+      typeof canvas._lineTooltipBuilder === 'function'
+        ? canvas._lineTooltipBuilder(hit)
+        : `<span class="title">${formatShortDate(hit.date)}</span><span class="value">Totaal volume: ${formatNumber(hit.volume)} kg</span><span class="title">Sets x reps x gewicht</span><span class="value">${hit.setsDetail || '-'}</span>`,
       position.clientX,
       position.clientY
     );
@@ -3192,7 +3302,10 @@ function bindLineChartHover(canvas, hitboxes) {
   canvas.addEventListener('touchstart', moveHandler, { passive: true });
   canvas.addEventListener('touchmove', moveHandler, { passive: true });
 
-  const leaveHandler = () => hideChartTooltip();
+  const leaveHandler = () => {
+    hideChartTooltip();
+    updateLineChartReadout(canvas._lineReadout, null, canvas._lineReadoutFormatter);
+  };
   canvas.addEventListener('mouseleave', leaveHandler);
   canvas.addEventListener('pointerleave', leaveHandler);
   canvas.addEventListener('touchend', leaveHandler, { passive: true });
@@ -3874,13 +3987,20 @@ function buildExerciseProgress(name, all) {
       const bestStr = best ? formatBestSet(best) : '-';
       const bestWeight = best ? getSetWeightData(best).total : 0;
       const bestReps = best ? Number(best.reps) || 0 : 0;
+      const ratings = matches
+        .map(ex => normalizeRatingValue(ex.rating))
+        .filter(value => value !== '');
+      const rating = ratings.length
+        ? ratings.reduce((sum, value) => sum + Number(value || 0), 0) / ratings.length
+        : '';
       const setsLabel = formatSetsSummary(sets);
       const setsDetail = formatFocusSetsDetail(sets);
 
-      points.push({ date, volume, best: bestStr, bestWeight, bestReps, setsLabel, setsDetail });
+      points.push({ date, volume, rating, best: bestStr, bestWeight, bestReps, setsLabel, setsDetail });
       rows.push({
         date,
         volume,
+        rating,
         best: bestStr,
         setsDetail
       });
@@ -3900,6 +4020,12 @@ function renderExerciseFocus(all) {
     if (focusName) focusName.textContent = '-';
     if (focusEmpty) focusEmpty.style.display = 'block';
     drawChart(focusChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
+    drawChart(focusRatingChart, [], {
+      lineColor: '#7b5fd1',
+      dotColor: '#c2552d',
+      emptyLabel: 'Nog geen oefeningscore.',
+      readoutEl: focusRatingReadout
+    });
     renderMetrics(focusMetrics, buildMetrics([]));
     renderStartNow(focusStartNow, [], null);
     renderProgressTable([], focusTable, 'Geen oefeningen gelogd.');
@@ -3915,6 +4041,12 @@ function renderExerciseFocus(all) {
       focusEmpty.style.display = 'block';
     }
     drawChart(focusChart, [], { lineColor: '#c2552d', dotColor: '#0f6b66', emptyLabel: 'Geen data' });
+    drawChart(focusRatingChart, [], {
+      lineColor: '#7b5fd1',
+      dotColor: '#c2552d',
+      emptyLabel: 'Nog geen oefeningscore.',
+      readoutEl: focusRatingReadout
+    });
     renderMetrics(focusMetrics, buildMetrics([]));
     renderStartNow(focusStartNow, [], null);
     renderProgressTable([], focusTable, 'Nog geen sessies voor deze oefening.');
@@ -3931,7 +4063,22 @@ function renderExerciseFocus(all) {
     lineColor: '#c2552d',
     dotColor: '#0f6b66',
     emptyLabel: 'Geen data',
-    annotations
+    annotations,
+    tooltipBuilder: hit => `<span class="title">${formatShortDate(hit.date)}</span><span class="value">Totaal volume: ${formatNumber(hit.volume)} kg</span><span class="title">Sets x reps x gewicht</span><span class="value">${hit.setsDetail || '-'}</span>`
+  });
+  const ratingPoints = getExerciseRatingPoints(name, all);
+  drawChart(focusRatingChart, ratingPoints, {
+    valueKey: 'rating',
+    lineColor: '#7b5fd1',
+    dotColor: '#c2552d',
+    emptyLabel: 'Nog geen oefeningscore ingevuld.',
+    yLabel: 'Tevredenheid (0-10)',
+    minValue: 0,
+    maxValue: 10,
+    tickFormatter: value => formatNumber(value),
+    readoutEl: focusRatingReadout,
+    readoutFormatter: hit => `${formatShortDate(hit.date)} • ${formatNumber(hit.rating)} / 10`,
+    tooltipBuilder: hit => `<span class="title">${formatShortDate(hit.date)}</span><span class="value">Tevredenheid: ${formatNumber(hit.rating)} / 10</span><span class="title">${name}</span>`
   });
   renderMetrics(focusMetrics, buildMetrics(points));
   renderStartNow(focusStartNow, points, currentExercise);
@@ -3953,6 +4100,7 @@ function renderProgressTable(rows, container, emptyMessage) {
       <div class="progress-row-head">${formatShortDate(row.date)}</div>
       <ul class="progress-row-list">
         <li>Totaal volume: <strong>${formatNumber(row.volume)} kg</strong></li>
+        <li>Tevredenheid: ${row.rating === '' ? '-' : `${formatNumber(row.rating)} / 10`}</li>
         <li>Sets: ${row.setsDetail || '-'}</li>
       </ul>
     `;
@@ -4085,6 +4233,46 @@ function getBodyweightPoints(all) {
     .filter(Boolean);
 }
 
+function getDayRatingPoints(all) {
+  return Object.entries(all)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, day]) => {
+      const rating = normalizeRatingValue(day?.dayRating ?? day?.rating);
+      if (rating === '') return null;
+      return {
+        date,
+        rating,
+        sessionName: day?.sessionName || '',
+        volume: rating
+      };
+    })
+    .filter(Boolean);
+}
+
+function getExerciseRatingPoints(name, all) {
+  const normalizedName = (name || '').trim();
+  if (!normalizedName) return [];
+
+  return Object.entries(all)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, day]) => {
+      const matches = (day.exercises || []).filter(ex => (ex.name || '').trim() === normalizedName);
+      if (!matches.length) return null;
+      const ratings = matches
+        .map(ex => normalizeRatingValue(ex.rating))
+        .filter(value => value !== '');
+      if (!ratings.length) return null;
+      const average = ratings.reduce((sum, value) => sum + Number(value || 0), 0) / ratings.length;
+      return {
+        date,
+        rating: average,
+        exerciseName: normalizedName,
+        volume: average
+      };
+    })
+    .filter(Boolean);
+}
+
 function getDurationRows(all, dates = null) {
   const entries = dates
     ? dates.map(date => [date, all[date] || {}])
@@ -4105,6 +4293,24 @@ function renderBodyweightTrend(all) {
   if (bodyweightHint) {
     bodyweightHint.style.display = points.length ? 'none' : 'block';
   }
+}
+
+function renderDayRatingTrend(all) {
+  if (!dayRatingChart) return;
+  const points = getDayRatingPoints(all);
+  drawChart(dayRatingChart, points, {
+    valueKey: 'rating',
+    lineColor: '#7b5fd1',
+    dotColor: '#c2552d',
+    emptyLabel: 'Nog geen dagscore ingevuld.',
+    yLabel: 'Tevredenheid (0-10)',
+    minValue: 0,
+    maxValue: 10,
+    tickFormatter: value => formatNumber(value),
+    readoutEl: dayRatingReadout,
+    readoutFormatter: hit => `${formatShortDate(hit.date)} • ${formatNumber(hit.rating)} / 10${hit.sessionName ? ` • ${hit.sessionName}` : ''}`,
+    tooltipBuilder: hit => `<span class="title">${formatShortDate(hit.date)}</span><span class="value">${formatNumber(hit.rating)} / 10</span>${hit.sessionName ? `<span class="title">${hit.sessionName}</span>` : ''}`
+  });
 }
 
 function renderTrainingDurationTrend(all) {
@@ -4458,6 +4664,13 @@ function drawChart(canvas, points, options = {}) {
   const dotColor = options.dotColor || '#0f6b66';
   const emptyLabel = options.emptyLabel || 'Geen data';
   const annotations = options.annotations || [];
+  const valueKey = options.valueKey || 'volume';
+  const yLabel = options.yLabel || 'Totaal volume (kg)';
+  const xLabel = options.xLabel || 'Datum';
+  const minValue = options.minValue ?? 0;
+  const values = points.map(point => Number(point?.[valueKey]) || 0);
+  const maxValue = options.maxValue ?? getNiceAxisMax(Math.max(...values, 10), 4);
+  const tickFormatter = options.tickFormatter || (value => `${formatNumber(value)} kg`);
   ctx.clearRect(0, 0, w, h);
 
   ctx.fillStyle = '#fff';
@@ -4467,7 +4680,11 @@ function drawChart(canvas, points, options = {}) {
     ctx.fillStyle = '#6a5e54';
     ctx.font = '14px Space Grotesk';
     ctx.fillText(emptyLabel, 14, h / 2);
-    bindLineChartHover(canvas, []);
+    bindLineChartHover(canvas, [], {
+      readoutEl: options.readoutEl,
+      readoutFormatter: options.readoutFormatter,
+      tooltipBuilder: options.tooltipBuilder
+    });
     return;
   }
 
@@ -4477,8 +4694,6 @@ function drawChart(canvas, points, options = {}) {
   const paddingBottom = 42;
   const chartWidth = w - paddingLeft - paddingRight;
   const chartHeight = h - paddingTop - paddingBottom;
-  const maxValue = getNiceAxisMax(Math.max(...points.map(p => p.volume), 10), 4);
-  const minValue = 0;
   const ticks = 4;
   const xStep = chartWidth / (points.length - 1 || 1);
   const hitboxes = [];
@@ -4497,16 +4712,16 @@ function drawChart(canvas, points, options = {}) {
   ctx.fillStyle = '#1a1a1a';
   ctx.font = '700 12px Space Grotesk';
   ctx.textAlign = 'center';
-  ctx.fillText('Totaal volume (kg)', 0, 0);
+  ctx.fillText(yLabel, 0, 0);
   ctx.restore();
 
   ctx.fillStyle = '#6a5e54';
   ctx.font = '700 11px Space Grotesk';
   ctx.textAlign = 'center';
-  ctx.fillText('Datum', paddingLeft + chartWidth / 2, h - 8);
+  ctx.fillText(xLabel, paddingLeft + chartWidth / 2, h - 8);
 
   for (let i = 0; i <= ticks; i += 1) {
-    const value = (maxValue / ticks) * i;
+    const value = minValue + ((maxValue - minValue) / ticks) * i;
     const y = h - paddingBottom - ((value - minValue) / (maxValue - minValue)) * chartHeight;
     ctx.strokeStyle = 'rgba(26,26,26,0.08)';
     ctx.lineWidth = 1;
@@ -4519,7 +4734,7 @@ function drawChart(canvas, points, options = {}) {
     ctx.font = '600 11px Space Grotesk';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${formatNumber(value)} kg`, paddingLeft - 8, y);
+    ctx.fillText(tickFormatter(value), paddingLeft - 8, y);
   }
 
   ctx.strokeStyle = lineColor;
@@ -4527,7 +4742,7 @@ function drawChart(canvas, points, options = {}) {
   ctx.beginPath();
   points.forEach((point, index) => {
     const x = paddingLeft + index * xStep;
-    const y = h - paddingBottom - ((point.volume - minValue) / (maxValue - minValue)) * chartHeight;
+    const y = h - paddingBottom - (((Number(point?.[valueKey]) || 0) - minValue) / (maxValue - minValue)) * chartHeight;
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
@@ -4536,17 +4751,15 @@ function drawChart(canvas, points, options = {}) {
   ctx.fillStyle = dotColor;
   points.forEach((point, index) => {
     const x = paddingLeft + index * xStep;
-    const y = h - paddingBottom - ((point.volume - minValue) / (maxValue - minValue)) * chartHeight;
+    const y = h - paddingBottom - (((Number(point?.[valueKey]) || 0) - minValue) / (maxValue - minValue)) * chartHeight;
     ctx.beginPath();
     ctx.arc(x, y, 3.5, 0, Math.PI * 2);
     ctx.fill();
     hitboxes.push({
+      ...point,
       x,
       y,
-      radius: 12,
-      date: point.date,
-      volume: point.volume,
-      setsDetail: point.setsDetail
+      radius: 12
     });
   });
 
@@ -4569,7 +4782,7 @@ function drawChart(canvas, points, options = {}) {
       if (idx < 0 || idx >= points.length) return;
       const point = points[idx];
       const x = paddingLeft + idx * xStep;
-      const y = h - paddingBottom - ((point.volume - minValue) / (maxValue - minValue)) * chartHeight;
+      const y = h - paddingBottom - (((Number(point?.[valueKey]) || 0) - minValue) / (maxValue - minValue)) * chartHeight;
       ctx.fillStyle = annotation.color || '#1a1a1a';
       ctx.fillText(annotation.label, x + 6, y - 8);
       ctx.beginPath();
@@ -4580,7 +4793,11 @@ function drawChart(canvas, points, options = {}) {
     });
   }
 
-  bindLineChartHover(canvas, hitboxes);
+  bindLineChartHover(canvas, hitboxes, {
+    tooltipBuilder: options.tooltipBuilder,
+    readoutEl: options.readoutEl,
+    readoutFormatter: options.readoutFormatter
+  });
 }
 
 function flashSaved() {
@@ -4864,9 +5081,11 @@ function hasDayExportContent(day) {
   if (String(day.sessionName || '').trim()) return true;
   if (String(day.bodyweight ?? '').trim()) return true;
   if (String(day.startTime || '').trim() || String(day.endTime || '').trim()) return true;
+  if (String(day.dayRating ?? '').trim()) return true;
   return (day.exercises || []).some(exercise =>
     String(exercise?.name || '').trim()
     || String(exercise?.notes || '').trim()
+    || String(exercise?.rating ?? '').trim()
     || (exercise?.sets || []).some(set => !isBlankSet(set))
   );
 }
@@ -4878,6 +5097,7 @@ function buildLogbookSummaryRowsForEntries(entries) {
     'Lichaamsgewicht (kg)',
     'Starttijd',
     'Eindtijd',
+    'Tevredenheid training (0-10)',
     'Trainingsduur (min)',
     'Oefeningen',
     'Sets',
@@ -4891,6 +5111,7 @@ function buildLogbookSummaryRowsForEntries(entries) {
       day.bodyweight === '' ? '' : Number(day.bodyweight) || day.bodyweight,
       day.startTime || '',
       day.endTime || '',
+      normalizeRatingValue(day.dayRating),
       computeTrainingDurationMinutes(day),
       day.exercises.length,
       day.exercises.reduce((sum, exercise) => sum + (exercise.sets || []).length, 0),
@@ -4913,6 +5134,7 @@ function buildLogbookSetRowsForEntries(entries) {
     'Modus',
     'Starttijd',
     'Eindtijd',
+    'Tevredenheid oefening (0-10)',
     'Reps',
     'Gewicht',
     'Reps links',
@@ -4942,6 +5164,7 @@ function buildLogbookSetRowsForEntries(entries) {
           splitMode ? 'Alternating' : 'Standaard',
           day.startTime || '',
           day.endTime || '',
+          normalizeRatingValue(exercise.rating),
           splitMode ? '' : (repData.reps ?? ''),
           splitMode ? '' : (weightData.weight ?? ''),
           splitMode ? (repData.left ?? '') : '',
@@ -4973,8 +5196,10 @@ function buildNutritionSummaryRowsForEntries(entries, range) {
     acc.protein += Number(nutrition.protein) || 0;
     acc.fat += Number(nutrition.fat) || 0;
     acc.carbs += Number(nutrition.carbs) || 0;
+    acc.steps += Number(nutrition.steps) || 0;
+    acc.sleepMinutes += computeSleepDurationMinutes(nutrition.bedTime, nutrition.wakeTime);
     return acc;
-  }, { calories: 0, protein: 0, fat: 0, carbs: 0 });
+  }, { calories: 0, protein: 0, fat: 0, carbs: 0, steps: 0, sleepMinutes: 0 });
 
   return [[
     'Periode',
@@ -4983,7 +5208,10 @@ function buildNutritionSummaryRowsForEntries(entries, range) {
     'Gem. calorieen',
     'Eiwitten totaal (g)',
     'Vetten totaal (g)',
-    'Koolhydraten totaal (g)'
+    'Koolhydraten totaal (g)',
+    'Stappen totaal',
+    'Gem. stappen',
+    'Gem. slaap (uur)'
   ], [
     rangeLabels[range] || range,
     entries.length,
@@ -4991,7 +5219,10 @@ function buildNutritionSummaryRowsForEntries(entries, range) {
     entries.length ? totals.calories / entries.length : 0,
     totals.protein,
     totals.fat,
-    totals.carbs
+    totals.carbs,
+    totals.steps,
+    entries.length ? totals.steps / entries.length : 0,
+    entries.length ? totals.sleepMinutes / entries.length / 60 : 0
   ]];
 }
 
@@ -5002,6 +5233,11 @@ function buildNutritionRowsForEntries(entries) {
     'Eiwitten (g)',
     'Vetten (g)',
     'Koolhydraten (g)',
+    'Stappen',
+    'Bedtijd',
+    'Wektijd',
+    'Slaapduur (uur)',
+    'Slaapduur (min)',
     'Macro-kcal'
   ]];
 
@@ -5010,12 +5246,18 @@ function buildNutritionRowsForEntries(entries) {
     const protein = Number(nutrition.protein) || 0;
     const fat = Number(nutrition.fat) || 0;
     const carbs = Number(nutrition.carbs) || 0;
+    const sleepMinutes = computeSleepDurationMinutes(nutrition.bedTime, nutrition.wakeTime);
     rows.push([
       date,
       parseMaybeNumber(nutrition.calories),
       parseMaybeNumber(nutrition.protein),
       parseMaybeNumber(nutrition.fat),
       parseMaybeNumber(nutrition.carbs),
+      parseMaybeNumber(nutrition.steps),
+      nutrition.bedTime || '',
+      nutrition.wakeTime || '',
+      sleepMinutes ? sleepMinutes / 60 : '',
+      sleepMinutes || '',
       protein * 4 + fat * 9 + carbs * 4
     ]);
   });
@@ -5983,6 +6225,13 @@ bodyweightInput.addEventListener('input', () => {
   persist();
 });
 
+if (dayRatingInput) {
+  dayRatingInput.addEventListener('input', () => {
+    state.dayRating = normalizeRatingValue(dayRatingInput.value);
+    persist();
+  });
+}
+
 if (nutritionCaloriesInput) {
   nutritionCaloriesInput.addEventListener('input', () => {
     state.nutrition.calories = nutritionCaloriesInput.value;
@@ -6010,6 +6259,30 @@ if (nutritionFatInput) {
 if (nutritionCarbsInput) {
   nutritionCarbsInput.addEventListener('input', () => {
     state.nutrition.carbs = nutritionCarbsInput.value;
+    renderNutritionPage();
+    persist();
+  });
+}
+
+if (nutritionStepsInput) {
+  nutritionStepsInput.addEventListener('input', () => {
+    state.nutrition.steps = nutritionStepsInput.value;
+    renderNutritionPage();
+    persist();
+  });
+}
+
+if (nutritionBedTimeInput) {
+  nutritionBedTimeInput.addEventListener('input', () => {
+    state.nutrition.bedTime = nutritionBedTimeInput.value;
+    renderNutritionPage();
+    persist();
+  });
+}
+
+if (nutritionWakeTimeInput) {
+  nutritionWakeTimeInput.addEventListener('input', () => {
+    state.nutrition.wakeTime = nutritionWakeTimeInput.value;
     renderNutritionPage();
     persist();
   });
