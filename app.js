@@ -1976,6 +1976,8 @@ function formatMuscleList(groups) {
 function renderDayExerciseSummary() {
   if (!dayExerciseSummary) return;
 
+  const all = loadAll();
+  all[state.date] = cloneState();
   dayExerciseSummary.innerHTML = '';
   if (!state.exercises.length) {
     if (dayEmpty) dayEmpty.style.display = 'block';
@@ -1992,7 +1994,8 @@ function renderDayExerciseSummary() {
     const name = (exercise.name || '').trim() || 'Oefening';
     const volume = exercise.sets.reduce((sum, set) => sum + setVolume(set, exercise), 0);
     const { primary, secondaryGroups } = resolveExerciseMuscles(exercise);
-    const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date);
+    const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
+    const personalRecords = findExercisePersonalRecords(exercise.name, all);
 
     const head = document.createElement('div');
     head.className = 'day-exercise-head';
@@ -2024,6 +2027,8 @@ function renderDayExerciseSummary() {
       <div><span class="label">Laatste keer:</span> <span>${previousSession ? formatShortDate(previousSession.date) : '-'}</span></div>
       <div><span class="label">Vorige sets:</span> <span>${previousSession ? formatFocusSetsDetail(previousSession.sets) : 'Nog geen eerdere sessie'}</span></div>
       <div><span class="label">Vorig volume:</span> <span>${previousSession ? `${formatNumber(previousSession.volume)} kg` : '-'}</span></div>
+      <div><span class="label">PR volume:</span> <span>${personalRecords.bestSession ? `${formatNumber(personalRecords.bestSession.volume)} kg • ${formatShortDate(personalRecords.bestSession.date)} • ${personalRecords.bestSession.setsDetail}` : '-'}</span></div>
+      <div><span class="label">Beste set ooit:</span> <span>${personalRecords.bestSet ? `${formatNumber(personalRecords.bestSet.volume)} kg • ${formatShortDate(personalRecords.bestSet.date)} • ${personalRecords.bestSet.detail}` : '-'}</span></div>
       <div><span class="label">Tevredenheid:</span> <span>${exercise.rating === '' ? '-' : `${formatNumber(exercise.rating)} / 10`}</span></div>
     `;
 
@@ -2580,6 +2585,68 @@ function findLatestPreviousExerciseSession(name, currentDate, all = loadAll()) {
     });
 
   return latest;
+}
+
+function findExercisePersonalRecords(name, all = loadAll()) {
+  const normalizedName = normalizeExerciseName(name);
+  if (!normalizedName) {
+    return {
+      bestSession: null,
+      bestSet: null
+    };
+  }
+
+  let bestSession = null;
+  let bestSet = null;
+
+  Object.entries(all)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([date, day]) => {
+      const matches = (day.exercises || []).filter(ex => normalizeExerciseName(ex.name) === normalizedName);
+      if (!matches.length) return;
+
+      const sets = matches.flatMap(ex => ex.sets || []);
+      const volume = sets.reduce((sum, set) => sum + setVolume(set), 0);
+
+      if (
+        volume > 0
+        && (
+          !bestSession
+          || volume > bestSession.volume
+          || (volume === bestSession.volume && date > bestSession.date)
+        )
+      ) {
+        bestSession = {
+          date,
+          volume,
+          sets,
+          setsDetail: formatFocusSetsDetail(sets)
+        };
+      }
+
+      matches.forEach(exercise => {
+        (exercise.sets || []).forEach(set => {
+          const setVol = setVolume(set, exercise);
+          if (
+            setVol > 0
+            && (
+              !bestSet
+              || setVol > bestSet.volume
+              || (setVol === bestSet.volume && date > bestSet.date)
+            )
+          ) {
+            bestSet = {
+              date,
+              volume: setVol,
+              set,
+              detail: formatFocusSetsDetail([set])
+            };
+          }
+        });
+      });
+    });
+
+  return { bestSession, bestSet };
 }
 
 function formatMetricValue(point) {
