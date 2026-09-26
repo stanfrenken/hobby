@@ -2235,17 +2235,20 @@ async function searchOpenFoodFacts(barcode = '') {
   if (!term) return;
   renderFoodSearchResults('Producten zoeken...');
   try {
-    const url = barcode
-      ? `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(term)}.json?fields=code,product_name,generic_name,brands,nutriments`
-      : `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term)}&search_simple=1&action=process&json=1&page_size=12&fields=code,product_name,generic_name,brands,nutriments`;
-    const response = await fetch(url);
+    const response = barcode
+      ? await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(term)}.json?fields=code,product_name,generic_name,brands,nutriments`)
+      : await fetch(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(term)}&langs=nl,en&page=1&page_size=12&fields=code,product_name,generic_name,brands,nutriments`);
     if (!response.ok) throw new Error('Productdatabase niet bereikbaar');
     const data = await response.json();
-    const source = barcode ? (data.product ? [data.product] : []) : (data.products || []);
-    currentFoodResults = source.map(mapOpenFoodProduct).filter(Boolean);
+    const source = barcode ? (data.product ? [data.product] : []) : (data.hits || data.products || []);
+    currentFoodResults = source
+      .map(item => item?._source || item?.document || item)
+      .map(mapOpenFoodProduct)
+      .filter(Boolean);
     renderFoodSearchResults();
   } catch (error) {
-    renderFoodSearchResults('Zoeken lukt nu niet. Controleer je internetverbinding of voeg het product zelf toe.');
+    console.error('Open Food Facts zoeken mislukt:', error);
+    renderFoodSearchResults('Open Food Facts kon de zoekopdracht niet verwerken. Probeer een barcode of voeg het product zelf toe.');
   }
 }
 
