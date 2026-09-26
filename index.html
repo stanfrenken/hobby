@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260926a" />
+  <link rel="stylesheet" href="styles.css?v=20260926d" />
 </head>
 <body>
   <div class="bg"></div>
@@ -422,11 +422,12 @@
                 <button id="foodSearchBtn" class="primary" type="button">Zoeken</button>
                 <label class="control"><span>Barcode</span><input id="foodBarcodeInput" inputmode="numeric" placeholder="871..." /></label>
                 <button id="foodBarcodeBtn" class="ghost" type="button">Zoek barcode</button>
-                <label class="control"><span>Hoeveelheid (g/ml)</span><input id="foodAmountInput" type="number" min="0.1" step="0.1" value="100" /></label>
                 <button id="quickFoodToggle" class="ghost" type="button">+ Snelle invoer</button>
               </div>
               <p class="food-attribution">Productdata via Open Food Facts. Controleer bij twijfel altijd het etiket.</p>
+              <div id="favoriteFoodQuickList" class="favorite-food-quick-list"></div>
               <div id="foodSearchResults" class="food-search-results"></div>
+              <div id="selectedFoodPanel" class="selected-food-panel" hidden></div>
               <form id="quickFoodForm" class="food-inline-form" hidden>
                 <input name="name" placeholder="Omschrijving" value="Snelle invoer" />
                 <input name="calories" type="number" min="0" step="0.1" placeholder="kcal" required />
@@ -799,7 +800,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260926c"></script>
+  <script src="app.js?v=20260926d"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>

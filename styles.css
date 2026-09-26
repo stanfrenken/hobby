@@ -686,6 +686,29 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .custom-food-card { display:grid; grid-template-columns:1fr auto; align-items:center; gap:16px; }
 .custom-food-values { display:grid; gap:4px; text-align:right; }
 .custom-food-card .buttons { grid-column:1/-1; }
+.food-result-detailed { display:grid; grid-template-columns:minmax(170px,.8fr) minmax(420px,2fr) auto; }
+.food-result-heading { display:grid; gap:4px; }
+.food-result-nutrients,.selected-food-per100,.selected-food-current-grid { display:grid; grid-template-columns:repeat(4,minmax(90px,1fr)); gap:7px; width:100%; }
+.food-result-nutrients > div,.selected-food-per100 > div,.selected-food-current-grid > div { display:grid; gap:2px; padding:8px 9px; border-radius:10px; background:var(--surface-soft); }
+.food-result-nutrients span,.selected-food-per100 span,.selected-food-current-grid span { color:var(--muted); font-size:.68rem; }
+.food-result-nutrients strong,.selected-food-per100 strong,.selected-food-current-grid strong { font-size:.82rem; }
+.favorite-food-quick-list:not(:empty) { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:16px; background:var(--surface-soft); }
+.favorite-food-head { display:flex; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.favorite-food-head span { color:var(--muted); font-size:.78rem; }
+.favorite-food-chips { display:flex; gap:8px; overflow-x:auto; padding-bottom:3px; }
+.favorite-food-chip { display:grid; gap:2px; min-width:max-content; padding:9px 12px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); text-align:left; cursor:pointer; }
+.favorite-food-chip small { color:var(--muted); }
+.selected-food-panel { margin-top:16px; padding:18px; border:2px solid var(--accent); border-radius:18px; background:linear-gradient(145deg,rgba(255,255,255,.97),rgba(241,246,238,.96)); box-shadow:0 16px 34px rgba(39,72,52,.12); }
+.selected-food-panel[hidden] { display:none; }
+.selected-food-heading { display:flex; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.selected-food-heading h3 { margin:3px 0; font-size:1.3rem; }
+.selected-food-heading p { margin:0; color:var(--muted); }
+.selected-food-controls { display:grid; grid-template-columns:180px 1fr auto; gap:14px; align-items:end; margin:16px 0; }
+.favorite-check { display:flex; align-items:center; gap:9px; min-height:44px; font-weight:700; }
+.favorite-check input { width:18px; height:18px; accent-color:var(--accent); }
+.selected-food-calculated { display:grid; gap:10px; padding-top:14px; border-top:1px solid var(--line); }
+.selected-food-calculated > div:first-child { display:flex; justify-content:space-between; align-items:baseline; }
+.selected-food-calculated > div:first-child strong { font-size:1.35rem; color:var(--accent); }
 
 @media (max-width: 760px) {
   .nutrition-subnav { width:100%; }
@@ -694,6 +717,10 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .meal-grid,.custom-food-list { grid-template-columns:1fr; }
   .nutrition-micros { grid-template-columns:1fr 1fr; }
   .food-result,.meal-entry { align-items:flex-start; flex-wrap:wrap; }
+  .food-result-detailed { display:grid; grid-template-columns:1fr; }
+  .food-result-nutrients,.selected-food-per100,.selected-food-current-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .selected-food-controls { grid-template-columns:1fr; align-items:stretch; }
+  .selected-food-controls .primary { width:100%; }
   .meal-entry-macros { text-align:left; }
 }
 
@@ -703,6 +730,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .meal-card-head > div:last-child { text-align:left; }
   .custom-food-card { grid-template-columns:1fr; }
   .custom-food-values { text-align:left; }
+  .selected-food-panel { padding:14px; }
 }
 
 .exercise-list { display: grid; gap: 16px; }

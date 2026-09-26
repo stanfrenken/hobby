@@ -93,8 +93,9 @@ const foodSearchInput = document.getElementById('foodSearchInput');
 const foodBarcodeInput = document.getElementById('foodBarcodeInput');
 const foodSearchResults = document.getElementById('foodSearchResults');
 const foodMealSelect = document.getElementById('foodMealSelect');
-const foodAmountInput = document.getElementById('foodAmountInput');
 const customFoodList = document.getElementById('customFoodList');
+const favoriteFoodQuickList = document.getElementById('favoriteFoodQuickList');
+const selectedFoodPanel = document.getElementById('selectedFoodPanel');
 const exportWeekPrimaryBtn = document.getElementById('exportWeekPrimaryBtn');
 const exportWeekSecondaryBtn = document.getElementById('exportWeekSecondaryBtn');
 const exportDurationBtn = document.getElementById('exportDurationBtn');
@@ -2137,6 +2138,7 @@ function loadFoodLibrary() {
 function saveFoodLibrary(items) {
   localStorage.setItem(FOOD_LIBRARY_KEY, JSON.stringify((items || []).map(normalizeFoodProduct).filter(Boolean)));
   renderCustomFoodLibrary();
+  renderFavoriteFoodQuickList();
   markAllDataChanged('foodLibrary');
 }
 
@@ -2172,7 +2174,7 @@ function formatNutrient(value, unit) {
 }
 
 function addFoodEntry(product, options = {}) {
-  const amount = cleanNumber(options.amount || foodAmountInput?.value || 100) || 100;
+  const amount = cleanNumber(options.amount || 100) || 100;
   state.nutrition.mealEntries.push(normalizeMealEntry({
     id: uid(), meal: options.meal || foodMealSelect?.value || 'breakfast', name: product.name,
     brand: product.brand, barcode: product.barcode, source: product.source, amount,
@@ -2210,6 +2212,74 @@ function renderCustomFoodLibrary() {
   if (!customFoodList) return;
   const products = loadFoodLibrary();
   customFoodList.innerHTML = products.length ? products.map(product => `<article class="panel custom-food-card"><div><span class="meal-kicker">Eigen product</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.brand || 'Zonder merk')} · per 100 ${product.unit}</p></div><div class="custom-food-values"><b>${formatNumber(product.nutrients.calories)} kcal</b><span>E ${formatNumber(product.nutrients.protein)} · V ${formatNumber(product.nutrients.fat)} · K ${formatNumber(product.nutrients.carbs)}</span></div><div class="buttons"><button type="button" class="primary small add-library-food" data-food-id="${product.id}">Toevoegen</button><button type="button" class="ghost small delete-library-food" data-food-id="${product.id}">Verwijder</button></div></article>`).join('') : '<section class="panel empty compact"><p>Nog geen eigen producten. Sla hierboven je eerste product op.</p></section>';
+}
+
+function renderFavoriteFoodQuickList() {
+  if (!favoriteFoodQuickList) return;
+  const products = loadFoodLibrary();
+  favoriteFoodQuickList.innerHTML = products.length ? `
+    <div class="favorite-food-head"><strong>Snel kiezen</strong><span>${products.length} opgeslagen product${products.length === 1 ? '' : 'en'}</span></div>
+    <div class="favorite-food-chips">${products.map(product => `<button type="button" class="favorite-food-chip" data-food-id="${product.id}"><span>${escapeHtml(product.name)}</span><small>${escapeHtml(product.brand || `${formatNumber(product.nutrients.calories)} kcal`)}</small></button>`).join('')}</div>
+  ` : '';
+}
+
+function foodNutrientGridHtml(nutrients, factor = 1) {
+  const items = [
+    ['calories', 'Calorieen', 'kcal'], ['protein', 'Eiwitten', 'g'], ['carbs', 'Koolhydraten', 'g'],
+    ['fat', 'Vetten', 'g'], ['saturatedFat', 'Verzadigd vet', 'g'], ['sugar', 'Suikers', 'g'],
+    ['fiber', 'Vezels', 'g'], ['salt', 'Zout', 'g']
+  ];
+  return items.map(([key, label, unit]) => `<div><span>${label}</span><strong>${formatNumber(cleanNumber(nutrients?.[key]) * factor)} ${unit}</strong></div>`).join('');
+}
+
+let selectedFoodProduct = null;
+
+function isFoodSaved(product) {
+  const signature = `${product.name}|${product.brand}`.toLocaleLowerCase('nl-NL');
+  return loadFoodLibrary().some(item => (product.barcode && item.barcode === product.barcode) || `${item.name}|${item.brand}`.toLocaleLowerCase('nl-NL') === signature);
+}
+
+function saveFoodAsFavorite(product) {
+  if (isFoodSaved(product)) return;
+  saveFoodLibrary([...loadFoodLibrary(), { ...product, id: uid(), source: 'favorite' }]);
+}
+
+function renderSelectedFoodPanel() {
+  if (!selectedFoodPanel || !selectedFoodProduct) return;
+  const currentAmount = cleanNumber(selectedFoodPanel.querySelector('#selectedFoodAmount')?.value || 100) || 100;
+  const saved = isFoodSaved(selectedFoodProduct);
+  selectedFoodPanel.hidden = false;
+  selectedFoodPanel.innerHTML = `
+    <div class="selected-food-heading">
+      <div><span class="meal-kicker">Gekozen product</span><h3>${escapeHtml(selectedFoodProduct.name)}</h3><p>${escapeHtml(selectedFoodProduct.brand || 'Merk onbekend')} · waarden per 100 ${selectedFoodProduct.unit}</p></div>
+      <button type="button" class="icon-button close-selected-food" aria-label="Sluiten">×</button>
+    </div>
+    <div class="selected-food-per100">${foodNutrientGridHtml(selectedFoodProduct.nutrients)}</div>
+    <div class="selected-food-controls">
+      <label class="control"><span>Hoeveelheid (${selectedFoodProduct.unit})</span><input id="selectedFoodAmount" type="number" min="0.1" step="0.1" value="${currentAmount}" /></label>
+      <label class="favorite-check"><input id="saveSelectedFoodFavorite" type="checkbox" ${saved ? 'checked disabled' : ''} /><span>${saved ? 'Al opgeslagen' : 'Bewaar voor de volgende keer'}</span></label>
+      <button type="button" class="primary confirm-selected-food">Toevoegen aan ${escapeHtml(MEAL_GROUPS.find(([key]) => key === foodMealSelect?.value)?.[1] || 'dagdeel')}</button>
+    </div>
+    <div class="selected-food-calculated"><div><span>Voor ${formatNumber(currentAmount)} ${selectedFoodProduct.unit}</span><strong>${formatNumber(selectedFoodProduct.nutrients.calories * currentAmount / 100)} kcal</strong></div><div class="selected-food-current-grid">${foodNutrientGridHtml(selectedFoodProduct.nutrients, currentAmount / 100)}</div></div>
+  `;
+}
+
+function selectFoodProduct(product) {
+  selectedFoodProduct = normalizeFoodProduct(product);
+  if (!selectedFoodProduct) return;
+  if (selectedFoodPanel) selectedFoodPanel.innerHTML = '';
+  document.querySelectorAll('.nutrition-tab').forEach(item => item.classList.toggle('active', item.dataset.nutritionTab === 'meals'));
+  document.querySelectorAll('.nutrition-tab-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.nutritionPanel === 'meals'));
+  renderSelectedFoodPanel();
+  selectedFoodPanel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function updateSelectedFoodCalculation() {
+  if (!selectedFoodPanel || !selectedFoodProduct) return;
+  const amount = cleanNumber(selectedFoodPanel.querySelector('#selectedFoodAmount')?.value);
+  const target = selectedFoodPanel.querySelector('.selected-food-calculated');
+  if (!target) return;
+  target.innerHTML = `<div><span>Voor ${formatNumber(amount)} ${selectedFoodProduct.unit}</span><strong>${formatNumber(selectedFoodProduct.nutrients.calories * amount / 100)} kcal</strong></div><div class="selected-food-current-grid">${foodNutrientGridHtml(selectedFoodProduct.nutrients, amount / 100)}</div>`;
 }
 
 let currentFoodResults = [];
@@ -2298,7 +2368,7 @@ async function performFoodTextSearch(term) {
 function renderFoodSearchResults(message = '') {
   if (!foodSearchResults) return;
   if (message) { foodSearchResults.innerHTML = `<p class="food-search-message">${escapeHtml(message)}</p>`; return; }
-  foodSearchResults.innerHTML = currentFoodResults.map((product, index) => `<article class="food-result"><div><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.brand || 'Merk onbekend')} · ${formatNumber(product.nutrients.calories)} kcal/100 ${product.unit}</span></div><button type="button" class="primary small add-search-food" data-result-index="${index}">Toevoegen</button></article>`).join('') || '<p class="food-search-message">Geen producten gevonden. Je kunt dit product zelf opslaan.</p>';
+  foodSearchResults.innerHTML = currentFoodResults.map((product, index) => `<article class="food-result food-result-detailed"><div class="food-result-heading"><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.brand || 'Merk onbekend')} · per 100 ${product.unit}</span></div><div class="food-result-nutrients">${foodNutrientGridHtml(product.nutrients)}</div><button type="button" class="primary small add-search-food" data-result-index="${index}">Kies product</button></article>`).join('') || '<p class="food-search-message">Geen producten gevonden. Je kunt dit product zelf opslaan.</p>';
 }
 
 async function searchOpenFoodFacts(barcode = '') {
@@ -2321,7 +2391,7 @@ async function searchOpenFoodFacts(barcode = '') {
         cacheFoodResults(term, online);
         currentFoodResults = [...ownMatches, ...online];
       } catch (error) {
-        if (!cached.length) throw error;
+        if (!cached.length && !ownMatches.length) throw error;
         currentFoodResults = [...ownMatches, ...cached];
         renderFoodSearchResults();
         foodSearchResults?.insertAdjacentHTML('afterbegin', '<p class="food-search-message">Open Food Facts reageerde niet; dit zijn je laatst opgeslagen zoekresultaten.</p>');
@@ -2353,6 +2423,7 @@ function renderNutritionPage() {
   renderNutritionMeals();
   renderNutritionMicros(totals);
   renderCustomFoodLibrary();
+  renderFavoriteFoodQuickList();
 
   const proteinKcal = typeof protein === 'number' ? protein * 4 : 0;
   const fatKcal = typeof fat === 'number' ? fat * 9 : 0;
@@ -6721,8 +6792,39 @@ if (foodSearchResults) foodSearchResults.addEventListener('click', event => {
   const button = event.target.closest('.add-search-food');
   if (!button) return;
   const product = currentFoodResults[Number(button.dataset.resultIndex)];
-  if (product) addFoodEntry(product);
+  if (product) selectFoodProduct(product);
 });
+if (favoriteFoodQuickList) favoriteFoodQuickList.addEventListener('click', event => {
+  const button = event.target.closest('.favorite-food-chip');
+  if (!button) return;
+  const product = loadFoodLibrary().find(item => item.id === button.dataset.foodId);
+  if (product) selectFoodProduct(product);
+});
+if (selectedFoodPanel) {
+  selectedFoodPanel.addEventListener('input', event => {
+    if (event.target.matches('#selectedFoodAmount')) updateSelectedFoodCalculation();
+  });
+  selectedFoodPanel.addEventListener('click', event => {
+    if (event.target.closest('.close-selected-food')) {
+      selectedFoodProduct = null;
+      selectedFoodPanel.hidden = true;
+      selectedFoodPanel.innerHTML = '';
+      return;
+    }
+    if (!event.target.closest('.confirm-selected-food') || !selectedFoodProduct) return;
+    const amount = cleanNumber(selectedFoodPanel.querySelector('#selectedFoodAmount')?.value);
+    if (!amount) {
+      selectedFoodPanel.querySelector('#selectedFoodAmount')?.focus();
+      return;
+    }
+    if (selectedFoodPanel.querySelector('#saveSelectedFoodFavorite')?.checked) saveFoodAsFavorite(selectedFoodProduct);
+    const product = selectedFoodProduct;
+    selectedFoodProduct = null;
+    selectedFoodPanel.hidden = true;
+    selectedFoodPanel.innerHTML = '';
+    addFoodEntry(product, { amount, meal: foodMealSelect?.value || 'breakfast' });
+  });
+}
 if (nutritionMeals) nutritionMeals.addEventListener('click', event => {
   const remove = event.target.closest('.remove-food-entry');
   if (remove) {
@@ -6741,7 +6843,7 @@ if (customFoodList) customFoodList.addEventListener('click', event => {
   const remove = event.target.closest('.delete-library-food');
   if (add) {
     const product = loadFoodLibrary().find(item => item.id === add.dataset.foodId);
-    if (product) addFoodEntry(product);
+    if (product) selectFoodProduct(product);
   }
   if (remove) saveFoodLibrary(loadFoodLibrary().filter(item => item.id !== remove.dataset.foodId));
 });
