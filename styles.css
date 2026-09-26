@@ -677,6 +677,13 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .meal-card-head > div:last-child { display:grid; gap:3px; text-align:right; }
 .meal-kicker { color:var(--accent) !important; font-size:.68rem !important; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
 .meal-entry-macros { flex:0 0 auto !important; text-align:right; }
+.meal-entry-product { width:max-content; max-width:100%; padding:0; border:0; border-bottom:1px dashed currentColor; background:transparent; color:var(--ink); font:inherit; font-weight:900; text-align:left; cursor:pointer; }
+.meal-entry-product:hover,.meal-entry-product:focus-visible { color:var(--accent); }
+.meal-entry-amount-control { display:grid; gap:4px; flex:0 0 112px; }
+.meal-entry-amount-control > span { color:var(--muted); font-size:.68rem; font-weight:700; }
+.meal-entry-amount-control > div { display:flex; align-items:center; gap:6px; }
+.meal-entry-amount { width:78px; min-height:36px; padding:7px 8px; border:1px solid var(--line); border-radius:9px; background:#fff; font:inherit; font-weight:800; }
+.meal-entry-amount-control b { color:var(--muted); font-size:.78rem; }
 .icon-button { width:32px; height:32px; border:0; border-radius:50%; background:#f2ece6; color:#7d443d; font-size:1.25rem; cursor:pointer; }
 .choose-meal { align-self:flex-start; margin-top:auto; }
 .nutrition-micros { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
@@ -722,6 +729,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .selected-food-controls { grid-template-columns:1fr; align-items:stretch; }
   .selected-food-controls .primary { width:100%; }
   .meal-entry-macros { text-align:left; }
+  .meal-entry-amount-control { flex:1 1 120px; }
 }
 
 @media (max-width: 460px) {
