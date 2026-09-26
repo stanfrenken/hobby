@@ -2213,15 +2213,86 @@ function renderCustomFoodLibrary() {
 }
 
 let currentFoodResults = [];
+let foodSearchInFlight = false;
+const FOOD_SEARCH_CACHE_KEY = 'fitnessLog.foodSearchCache.v1';
+
+function pickFoodText(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(item => pickFoodText(item)).filter(Boolean).join(', ');
+  if (value && typeof value === 'object') {
+    return value.nl || value.en || value.main || value.name || value.text || Object.values(value).find(item => typeof item === 'string') || '';
+  }
+  return '';
+}
+
 function mapOpenFoodProduct(raw) {
   const n = raw?.nutriments || {};
-  return normalizeFoodProduct({ id: `off-${raw.code || uid()}`, name: raw.product_name || raw.generic_name || 'Onbekend product', brand: raw.brands || '', barcode: raw.code || '', source: 'openfoodfacts', nutrients: {
+  return normalizeFoodProduct({ id: `off-${raw.code || uid()}`, name: pickFoodText(raw.product_name) || pickFoodText(raw.generic_name) || 'Onbekend product', brand: pickFoodText(raw.brands), barcode: raw.code || '', source: 'openfoodfacts', nutrients: {
     calories: n['energy-kcal_100g'] ?? (cleanNumber(n.energy_100g) / 4.184), protein: n.proteins_100g, fat: n.fat_100g, carbs: n.carbohydrates_100g,
     fiber: n.fiber_100g, salt: n.salt_100g, sugar: n.sugars_100g, saturatedFat: n['saturated-fat_100g'],
     sodium: n.sodium_100g, calcium: cleanNumber(n.calcium_100g) * 1000, iron: cleanNumber(n.iron_100g) * 1000,
     potassium: cleanNumber(n.potassium_100g) * 1000, magnesium: cleanNumber(n.magnesium_100g) * 1000,
     vitaminC: cleanNumber(n['vitamin-c_100g']) * 1000
   }});
+}
+
+function loadFoodSearchCache() {
+  try { return JSON.parse(localStorage.getItem(FOOD_SEARCH_CACHE_KEY) || '{}') || {}; }
+  catch (_) { return {}; }
+}
+
+function getCachedFoodResults(term) {
+  const entry = loadFoodSearchCache()[term.toLocaleLowerCase('nl-NL')];
+  if (!entry || !Array.isArray(entry.products)) return [];
+  return entry.products.map(normalizeFoodProduct).filter(Boolean);
+}
+
+function cacheFoodResults(term, products) {
+  const cache = loadFoodSearchCache();
+  cache[term.toLocaleLowerCase('nl-NL')] = { savedAt: Date.now(), products };
+  const recent = Object.entries(cache).sort((a, b) => (b[1]?.savedAt || 0) - (a[1]?.savedAt || 0)).slice(0, 40);
+  localStorage.setItem(FOOD_SEARCH_CACHE_KEY, JSON.stringify(Object.fromEntries(recent)));
+}
+
+async function fetchFoodJson(url, options = {}, timeoutMs = 9000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } finally { clearTimeout(timer); }
+}
+
+function extractFoodSearchProducts(data) {
+  const hits = Array.isArray(data?.hits) ? data.hits : (Array.isArray(data?.hits?.hits) ? data.hits.hits : null);
+  return (hits || data?.products || [])
+    .map(item => item?._source || item?.document || item)
+    .map(mapOpenFoodProduct)
+    .filter(Boolean);
+}
+
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function performFoodTextSearch(term) {
+  const fields = 'code,product_name,generic_name,brands,nutriments';
+  const attempts = [
+    () => fetchFoodJson(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(term)}&langs=nl,en&page=1&page_size=12&fields=${fields}`),
+    () => fetchFoodJson('https://search.openfoodfacts.org/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: term, langs: ['nl', 'en'], page: 1, page_size: 12, fields: fields.split(',') })
+    }),
+    () => fetchFoodJson(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term)}&search_simple=1&action=process&json=1&page_size=12&fields=${fields}`)
+  ];
+  let lastError;
+  for (let index = 0; index < attempts.length; index += 1) {
+    try {
+      const products = extractFoodSearchProducts(await attempts[index]());
+      if (products.length) return products;
+    } catch (error) { lastError = error; }
+    if (index < attempts.length - 1) await wait(450 * (index + 1));
+  }
+  throw lastError || new Error('Geen producten gevonden');
 }
 
 function renderFoodSearchResults(message = '') {
@@ -2232,23 +2303,38 @@ function renderFoodSearchResults(message = '') {
 
 async function searchOpenFoodFacts(barcode = '') {
   const term = barcode || foodSearchInput?.value.trim();
-  if (!term) return;
+  if (!term || foodSearchInFlight) return;
+  foodSearchInFlight = true;
+  const originalLabel = barcode ? foodBarcodeBtn?.textContent : foodSearchBtn?.textContent;
+  const activeButton = barcode ? foodBarcodeBtn : foodSearchBtn;
+  if (activeButton) { activeButton.disabled = true; activeButton.textContent = 'Zoeken...'; }
   renderFoodSearchResults('Producten zoeken...');
   try {
-    const response = barcode
-      ? await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(term)}.json?fields=code,product_name,generic_name,brands,nutriments`)
-      : await fetch(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(term)}&langs=nl,en&page=1&page_size=12&fields=code,product_name,generic_name,brands,nutriments`);
-    if (!response.ok) throw new Error('Productdatabase niet bereikbaar');
-    const data = await response.json();
-    const source = barcode ? (data.product ? [data.product] : []) : (data.hits || data.products || []);
-    currentFoodResults = source
-      .map(item => item?._source || item?.document || item)
-      .map(mapOpenFoodProduct)
-      .filter(Boolean);
+    if (barcode) {
+      const data = await fetchFoodJson(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(term)}.json?fields=code,product_name,generic_name,brands,nutriments`);
+      currentFoodResults = data.product ? [mapOpenFoodProduct(data.product)].filter(Boolean) : [];
+    } else {
+      const ownMatches = loadFoodLibrary().filter(product => `${product.name} ${product.brand}`.toLocaleLowerCase('nl-NL').includes(term.toLocaleLowerCase('nl-NL')));
+      const cached = getCachedFoodResults(term);
+      try {
+        const online = await performFoodTextSearch(term);
+        cacheFoodResults(term, online);
+        currentFoodResults = [...ownMatches, ...online];
+      } catch (error) {
+        if (!cached.length) throw error;
+        currentFoodResults = [...ownMatches, ...cached];
+        renderFoodSearchResults();
+        foodSearchResults?.insertAdjacentHTML('afterbegin', '<p class="food-search-message">Open Food Facts reageerde niet; dit zijn je laatst opgeslagen zoekresultaten.</p>');
+        return;
+      }
+    }
     renderFoodSearchResults();
   } catch (error) {
     console.error('Open Food Facts zoeken mislukt:', error);
-    renderFoodSearchResults('Open Food Facts kon de zoekopdracht niet verwerken. Probeer een barcode of voeg het product zelf toe.');
+    renderFoodSearchResults('Open Food Facts reageert momenteel niet na meerdere pogingen. Probeer een barcode; die route is doorgaans stabieler.');
+  } finally {
+    foodSearchInFlight = false;
+    if (activeButton) { activeButton.disabled = false; activeButton.textContent = originalLabel || 'Zoeken'; }
   }
 }
 
