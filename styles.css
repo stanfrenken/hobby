@@ -653,6 +653,58 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   color: var(--muted);
 }
 
+.nutrition-subnav { display:flex; gap:8px; margin:18px 0; padding:6px; width:max-content; max-width:100%; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.72); overflow-x:auto; }
+.nutrition-tab { border:0; border-radius:11px; padding:10px 16px; background:transparent; color:var(--muted); font-weight:800; white-space:nowrap; cursor:pointer; }
+.nutrition-tab.active { background:var(--ink); color:#fff; box-shadow:0 8px 22px rgba(22,28,25,.16); }
+.nutrition-tab-panel { display:none; }
+.nutrition-tab-panel.active { display:grid; }
+.food-add-panel { margin-bottom:18px; }
+.food-search-grid { display:grid; grid-template-columns:170px minmax(240px,1fr) auto; gap:12px; align-items:end; }
+.food-search-wide { min-width:0; }
+.food-attribution { margin:14px 0 0; color:var(--muted); font-size:.78rem; }
+.food-search-results { display:grid; gap:8px; margin-top:14px; }
+.food-result,.meal-entry { display:flex; align-items:center; gap:14px; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.7); }
+.food-result > div,.meal-entry > div:first-child { display:grid; gap:3px; min-width:0; flex:1; }
+.food-result span,.meal-entry span,.meal-card-head span,.custom-food-card p,.custom-food-values span { color:var(--muted); font-size:.78rem; }
+.food-search-message,.meal-empty { color:var(--muted); margin:8px 0; }
+.food-inline-form,.custom-food-form { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:10px; margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
+.food-inline-form[hidden] { display:none; }
+.food-inline-form input,.custom-food-form input { width:100%; }
+.meal-grid,.custom-food-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.meal-card { display:flex; flex-direction:column; gap:12px; }
+.meal-card-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding-bottom:10px; border-bottom:1px solid var(--line); }
+.meal-card-head h3,.custom-food-card h3 { margin:3px 0 0; }
+.meal-card-head > div:last-child { display:grid; gap:3px; text-align:right; }
+.meal-kicker { color:var(--accent) !important; font-size:.68rem !important; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+.meal-entry-macros { flex:0 0 auto !important; text-align:right; }
+.icon-button { width:32px; height:32px; border:0; border-radius:50%; background:#f2ece6; color:#7d443d; font-size:1.25rem; cursor:pointer; }
+.choose-meal { align-self:flex-start; margin-top:auto; }
+.nutrition-micros { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.nutrition-micros article { display:flex; justify-content:space-between; gap:10px; padding:13px 15px; border-radius:13px; background:var(--surface-soft); }
+.nutrition-micros span { color:var(--muted); }
+.custom-food-form { grid-template-columns:repeat(3,minmax(130px,1fr)); }
+.custom-food-card { display:grid; grid-template-columns:1fr auto; align-items:center; gap:16px; }
+.custom-food-values { display:grid; gap:4px; text-align:right; }
+.custom-food-card .buttons { grid-column:1/-1; }
+
+@media (max-width: 760px) {
+  .nutrition-subnav { width:100%; }
+  .food-search-grid,.food-inline-form,.custom-food-form { grid-template-columns:1fr 1fr; }
+  .food-search-wide { grid-column:1/-1; }
+  .meal-grid,.custom-food-list { grid-template-columns:1fr; }
+  .nutrition-micros { grid-template-columns:1fr 1fr; }
+  .food-result,.meal-entry { align-items:flex-start; flex-wrap:wrap; }
+  .meal-entry-macros { text-align:left; }
+}
+
+@media (max-width: 460px) {
+  .food-search-grid,.food-inline-form,.custom-food-form,.nutrition-micros { grid-template-columns:1fr; }
+  .meal-card-head { align-items:flex-start; }
+  .meal-card-head > div:last-child { text-align:left; }
+  .custom-food-card { grid-template-columns:1fr; }
+  .custom-food-values { text-align:left; }
+}
+
 .exercise-list { display: grid; gap: 16px; }
 
 .exercise-card {

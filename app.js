@@ -10,6 +10,7 @@ const DASHBOARD_WEEK_KEY = 'fitnessLog.dashboardWeek.v1';
 const VISIT_GRANULARITY_KEY = 'fitnessLog.visitGranularity.v1';
 const PROGRESS_ENTRIES_KEY = 'fitnessLog.progressEntries.v1';
 const VISION_SETTINGS_KEY = 'fitnessLog.visionSettings.v1';
+const FOOD_LIBRARY_KEY = 'fitnessLog.foodLibrary.v1';
 
 const dateInput = document.getElementById('dateInput');
 const nutritionDateInput = document.getElementById('nutritionDateInput');
@@ -86,6 +87,14 @@ const nutritionBedTimeInput = document.getElementById('nutritionBedTimeInput');
 const nutritionWakeTimeInput = document.getElementById('nutritionWakeTimeInput');
 const nutritionSummaryCards = document.getElementById('nutritionSummaryCards');
 const nutritionMacroPanel = document.getElementById('nutritionMacroPanel');
+const nutritionMeals = document.getElementById('nutritionMeals');
+const nutritionMicros = document.getElementById('nutritionMicros');
+const foodSearchInput = document.getElementById('foodSearchInput');
+const foodBarcodeInput = document.getElementById('foodBarcodeInput');
+const foodSearchResults = document.getElementById('foodSearchResults');
+const foodMealSelect = document.getElementById('foodMealSelect');
+const foodAmountInput = document.getElementById('foodAmountInput');
+const customFoodList = document.getElementById('customFoodList');
 const exportWeekPrimaryBtn = document.getElementById('exportWeekPrimaryBtn');
 const exportWeekSecondaryBtn = document.getElementById('exportWeekSecondaryBtn');
 const exportDurationBtn = document.getElementById('exportDurationBtn');
@@ -153,7 +162,8 @@ const state = {
     carbs: '',
     steps: '',
     bedTime: '',
-    wakeTime: ''
+    wakeTime: '',
+    mealEntries: []
   },
   updatedAt: 0,
   exercises: []
@@ -178,7 +188,8 @@ function createEmptyNutrition() {
     carbs: '',
     steps: '',
     bedTime: '',
-    wakeTime: ''
+    wakeTime: '',
+    mealEntries: []
   };
 }
 
@@ -191,7 +202,8 @@ function normalizeNutritionData(raw) {
     carbs: source.carbs ?? source.carbohydrates ?? source.koolhydraten ?? '',
     steps: source.steps ?? source.stepCount ?? '',
     bedTime: source.bedTime ?? source.bedtime ?? '',
-    wakeTime: source.wakeTime ?? source.waketime ?? source.wakeUpTime ?? ''
+    wakeTime: source.wakeTime ?? source.waketime ?? source.wakeUpTime ?? '',
+    mealEntries: Array.isArray(source.mealEntries) ? source.mealEntries.map(normalizeMealEntry).filter(Boolean) : []
   };
 }
 
@@ -205,7 +217,38 @@ function mergeNutritionData(primary, fallback) {
     carbs: String(preferred.carbs ?? '').trim() !== '' ? preferred.carbs : backup.carbs,
     steps: String(preferred.steps ?? '').trim() !== '' ? preferred.steps : backup.steps,
     bedTime: String(preferred.bedTime ?? '').trim() !== '' ? preferred.bedTime : backup.bedTime,
-    wakeTime: String(preferred.wakeTime ?? '').trim() !== '' ? preferred.wakeTime : backup.wakeTime
+    wakeTime: String(preferred.wakeTime ?? '').trim() !== '' ? preferred.wakeTime : backup.wakeTime,
+    mealEntries: preferred.mealEntries.length ? preferred.mealEntries : backup.mealEntries
+  };
+}
+
+const MEAL_GROUPS = [
+  ['breakfast', 'Ontbijt'], ['morningSnack', 'Ochtendsnack'], ['lunch', 'Lunch'],
+  ['afternoonSnack', 'Middagsnack'], ['dinner', 'Avondeten'], ['eveningSnack', 'Avondsnack']
+];
+const NUTRIENT_KEYS = ['calories', 'protein', 'fat', 'carbs', 'fiber', 'salt', 'sugar', 'saturatedFat', 'sodium', 'calcium', 'iron', 'potassium', 'magnesium', 'vitaminC'];
+
+function cleanNumber(value) {
+  const number = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function normalizeNutrients(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return NUTRIENT_KEYS.reduce((result, key) => {
+    result[key] = cleanNumber(source[key]);
+    return result;
+  }, {});
+}
+
+function normalizeMealEntry(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    id: raw.id || uid(), meal: MEAL_GROUPS.some(([key]) => key === raw.meal) ? raw.meal : 'breakfast',
+    name: String(raw.name || 'Snelle invoer'), brand: String(raw.brand || ''), source: String(raw.source || 'quick'),
+    barcode: String(raw.barcode || ''), amount: cleanNumber(raw.amount || 100), unit: raw.unit === 'ml' ? 'ml' : 'g',
+    basisAmount: cleanNumber(raw.basisAmount || 100) || 100,
+    nutrients: normalizeNutrients(raw.nutrients), directTotals: !!raw.directTotals
   };
 }
 
@@ -2052,8 +2095,8 @@ function hasNutritionContent(day) {
 }
 
 function hasMacroContent(nutrition) {
-  const normalized = normalizeNutritionData(nutrition);
-  return ['calories', 'protein', 'fat', 'carbs'].some(key => String(normalized[key] ?? '').trim() !== '');
+  const totals = getNutritionTotals(nutrition);
+  return ['calories', 'protein', 'fat', 'carbs'].some(key => totals[key] > 0);
 }
 
 function formatNutritionDisplay(value, unit = '') {
@@ -2080,6 +2123,132 @@ function formatSleepDuration(minutes) {
   return `${hours}u ${rest}m`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+}
+
+function loadFoodLibrary() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FOOD_LIBRARY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.map(normalizeFoodProduct).filter(Boolean) : [];
+  } catch (_) { return []; }
+}
+
+function saveFoodLibrary(items) {
+  localStorage.setItem(FOOD_LIBRARY_KEY, JSON.stringify((items || []).map(normalizeFoodProduct).filter(Boolean)));
+  renderCustomFoodLibrary();
+  markAllDataChanged('foodLibrary');
+}
+
+function normalizeFoodProduct(raw) {
+  if (!raw || typeof raw !== 'object' || !String(raw.name || '').trim()) return null;
+  return {
+    id: raw.id || uid(), name: String(raw.name).trim(), brand: String(raw.brand || '').trim(),
+    barcode: String(raw.barcode || ''), source: String(raw.source || 'custom'), unit: raw.unit === 'ml' ? 'ml' : 'g',
+    nutrients: normalizeNutrients(raw.nutrients)
+  };
+}
+
+function scaleEntryNutrients(entry) {
+  const factor = entry.directTotals ? 1 : cleanNumber(entry.amount) / (cleanNumber(entry.basisAmount) || 100);
+  return NUTRIENT_KEYS.reduce((result, key) => {
+    result[key] = cleanNumber(entry.nutrients?.[key]) * factor;
+    return result;
+  }, {});
+}
+
+function getNutritionTotals(nutritionLike) {
+  const nutrition = normalizeNutritionData(nutritionLike);
+  const totals = normalizeNutrients({ calories: nutrition.calories, protein: nutrition.protein, fat: nutrition.fat, carbs: nutrition.carbs });
+  nutrition.mealEntries.forEach(entry => {
+    const values = scaleEntryNutrients(entry);
+    NUTRIENT_KEYS.forEach(key => { totals[key] += values[key]; });
+  });
+  return totals;
+}
+
+function formatNutrient(value, unit) {
+  return value > 0 ? `${formatNumber(Math.round(value * 10) / 10)} ${unit}` : '-';
+}
+
+function addFoodEntry(product, options = {}) {
+  const amount = cleanNumber(options.amount || foodAmountInput?.value || 100) || 100;
+  state.nutrition.mealEntries.push(normalizeMealEntry({
+    id: uid(), meal: options.meal || foodMealSelect?.value || 'breakfast', name: product.name,
+    brand: product.brand, barcode: product.barcode, source: product.source, amount,
+    unit: product.unit || 'g', basisAmount: 100, nutrients: product.nutrients, directTotals: !!options.directTotals
+  }));
+  persist();
+  renderNutritionPage();
+}
+
+function renderNutritionMeals() {
+  if (!nutritionMeals) return;
+  const entries = normalizeNutritionData(state.nutrition).mealEntries;
+  nutritionMeals.innerHTML = MEAL_GROUPS.map(([key, label]) => {
+    const mealEntries = entries.filter(entry => entry.meal === key);
+    const mealTotals = mealEntries.reduce((totals, entry) => {
+      const values = scaleEntryNutrients(entry);
+      NUTRIENT_KEYS.forEach(nutrient => { totals[nutrient] += values[nutrient]; });
+      return totals;
+    }, normalizeNutrients({}));
+    const rows = mealEntries.length ? mealEntries.map(entry => {
+      const values = scaleEntryNutrients(entry);
+      return `<article class="meal-entry"><div><strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.brand)}${entry.directTotals ? '' : ` · ${formatNumber(entry.amount)} ${entry.unit}`}</span></div><div class="meal-entry-macros"><b>${formatNumber(values.calories)} kcal</b><span>E ${formatNumber(values.protein)} · V ${formatNumber(values.fat)} · K ${formatNumber(values.carbs)}</span></div><button type="button" class="icon-button remove-food-entry" data-entry-id="${entry.id}" aria-label="Verwijder ${escapeHtml(entry.name)}">×</button></article>`;
+    }).join('') : '<p class="meal-empty">Nog niets ingevuld.</p>';
+    return `<section class="panel meal-card"><div class="meal-card-head"><div><span class="meal-kicker">Dagdeel</span><h3>${label}</h3></div><div><strong>${formatNumber(mealTotals.calories)} kcal</strong><span>E ${formatNumber(mealTotals.protein)} · V ${formatNumber(mealTotals.fat)} · K ${formatNumber(mealTotals.carbs)}</span></div></div>${rows}<button type="button" class="ghost small choose-meal" data-meal="${key}">+ Voeg product toe</button></section>`;
+  }).join('');
+}
+
+function renderNutritionMicros(totals) {
+  if (!nutritionMicros) return;
+  const items = [['fiber','Vezels','g'],['salt','Zout','g'],['sugar','Suikers','g'],['saturatedFat','Verzadigd vet','g'],['calcium','Calcium','mg'],['iron','IJzer','mg'],['potassium','Kalium','mg'],['magnesium','Magnesium','mg'],['vitaminC','Vitamine C','mg']];
+  nutritionMicros.innerHTML = items.map(([key, label, unit]) => `<article><span>${label}</span><strong>${formatNutrient(totals[key], unit)}</strong></article>`).join('');
+}
+
+function renderCustomFoodLibrary() {
+  if (!customFoodList) return;
+  const products = loadFoodLibrary();
+  customFoodList.innerHTML = products.length ? products.map(product => `<article class="panel custom-food-card"><div><span class="meal-kicker">Eigen product</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.brand || 'Zonder merk')} · per 100 ${product.unit}</p></div><div class="custom-food-values"><b>${formatNumber(product.nutrients.calories)} kcal</b><span>E ${formatNumber(product.nutrients.protein)} · V ${formatNumber(product.nutrients.fat)} · K ${formatNumber(product.nutrients.carbs)}</span></div><div class="buttons"><button type="button" class="primary small add-library-food" data-food-id="${product.id}">Toevoegen</button><button type="button" class="ghost small delete-library-food" data-food-id="${product.id}">Verwijder</button></div></article>`).join('') : '<section class="panel empty compact"><p>Nog geen eigen producten. Sla hierboven je eerste product op.</p></section>';
+}
+
+let currentFoodResults = [];
+function mapOpenFoodProduct(raw) {
+  const n = raw?.nutriments || {};
+  return normalizeFoodProduct({ id: `off-${raw.code || uid()}`, name: raw.product_name || raw.generic_name || 'Onbekend product', brand: raw.brands || '', barcode: raw.code || '', source: 'openfoodfacts', nutrients: {
+    calories: n['energy-kcal_100g'] ?? (cleanNumber(n.energy_100g) / 4.184), protein: n.proteins_100g, fat: n.fat_100g, carbs: n.carbohydrates_100g,
+    fiber: n.fiber_100g, salt: n.salt_100g, sugar: n.sugars_100g, saturatedFat: n['saturated-fat_100g'],
+    sodium: n.sodium_100g, calcium: cleanNumber(n.calcium_100g) * 1000, iron: cleanNumber(n.iron_100g) * 1000,
+    potassium: cleanNumber(n.potassium_100g) * 1000, magnesium: cleanNumber(n.magnesium_100g) * 1000,
+    vitaminC: cleanNumber(n['vitamin-c_100g']) * 1000
+  }});
+}
+
+function renderFoodSearchResults(message = '') {
+  if (!foodSearchResults) return;
+  if (message) { foodSearchResults.innerHTML = `<p class="food-search-message">${escapeHtml(message)}</p>`; return; }
+  foodSearchResults.innerHTML = currentFoodResults.map((product, index) => `<article class="food-result"><div><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.brand || 'Merk onbekend')} · ${formatNumber(product.nutrients.calories)} kcal/100 ${product.unit}</span></div><button type="button" class="primary small add-search-food" data-result-index="${index}">Toevoegen</button></article>`).join('') || '<p class="food-search-message">Geen producten gevonden. Je kunt dit product zelf opslaan.</p>';
+}
+
+async function searchOpenFoodFacts(barcode = '') {
+  const term = barcode || foodSearchInput?.value.trim();
+  if (!term) return;
+  renderFoodSearchResults('Producten zoeken...');
+  try {
+    const url = barcode
+      ? `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(term)}.json?fields=code,product_name,generic_name,brands,nutriments`
+      : `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term)}&search_simple=1&action=process&json=1&page_size=12&fields=code,product_name,generic_name,brands,nutriments`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Productdatabase niet bereikbaar');
+    const data = await response.json();
+    const source = barcode ? (data.product ? [data.product] : []) : (data.products || []);
+    currentFoodResults = source.map(mapOpenFoodProduct).filter(Boolean);
+    renderFoodSearchResults();
+  } catch (error) {
+    renderFoodSearchResults('Zoeken lukt nu niet. Controleer je internetverbinding of voeg het product zelf toe.');
+  }
+}
+
 function renderNutritionPage() {
   if (!nutritionSummaryCards || !nutritionMacroPanel) return;
 
@@ -2087,10 +2256,14 @@ function renderNutritionPage() {
   if (nutritionDateBadge) nutritionDateBadge.textContent = formatLongDate(state.date);
 
   const nutrition = normalizeNutritionData(state.nutrition);
-  const calories = parseMaybeNumber(nutrition.calories);
-  const protein = parseMaybeNumber(nutrition.protein);
-  const fat = parseMaybeNumber(nutrition.fat);
-  const carbs = parseMaybeNumber(nutrition.carbs);
+  const totals = getNutritionTotals(nutrition);
+  const calories = totals.calories;
+  const protein = totals.protein;
+  const fat = totals.fat;
+  const carbs = totals.carbs;
+  renderNutritionMeals();
+  renderNutritionMicros(totals);
+  renderCustomFoodLibrary();
 
   const proteinKcal = typeof protein === 'number' ? protein * 4 : 0;
   const fatKcal = typeof fat === 'number' ? fat * 9 : 0;
@@ -5307,10 +5480,11 @@ function buildNutritionSummaryRowsForEntries(entries, range) {
   };
   const totals = entries.reduce((acc, { day }) => {
     const nutrition = normalizeNutritionData(day?.nutrition || day);
-    acc.calories += Number(nutrition.calories) || 0;
-    acc.protein += Number(nutrition.protein) || 0;
-    acc.fat += Number(nutrition.fat) || 0;
-    acc.carbs += Number(nutrition.carbs) || 0;
+    const calculated = getNutritionTotals(nutrition);
+    acc.calories += calculated.calories;
+    acc.protein += calculated.protein;
+    acc.fat += calculated.fat;
+    acc.carbs += calculated.carbs;
     acc.steps += Number(nutrition.steps) || 0;
     acc.sleepMinutes += computeSleepDurationMinutes(nutrition.bedTime, nutrition.wakeTime);
     return acc;
@@ -5358,16 +5532,17 @@ function buildNutritionRowsForEntries(entries) {
 
   entries.forEach(({ date, day }) => {
     const nutrition = normalizeNutritionData(day?.nutrition || day);
-    const protein = Number(nutrition.protein) || 0;
-    const fat = Number(nutrition.fat) || 0;
-    const carbs = Number(nutrition.carbs) || 0;
+    const calculated = getNutritionTotals(nutrition);
+    const protein = calculated.protein;
+    const fat = calculated.fat;
+    const carbs = calculated.carbs;
     const sleepMinutes = computeSleepDurationMinutes(nutrition.bedTime, nutrition.wakeTime);
     rows.push([
       date,
-      parseMaybeNumber(nutrition.calories),
-      parseMaybeNumber(nutrition.protein),
-      parseMaybeNumber(nutrition.fat),
-      parseMaybeNumber(nutrition.carbs),
+      calculated.calories,
+      calculated.protein,
+      calculated.fat,
+      calculated.carbs,
       parseMaybeNumber(nutrition.steps),
       nutrition.bedTime || '',
       nutrition.wakeTime || '',
@@ -5377,6 +5552,18 @@ function buildNutritionRowsForEntries(entries) {
     ]);
   });
 
+  return rows;
+}
+
+function buildNutritionMealRowsForEntries(entries) {
+  const rows = [['Datum', 'Dagdeel', 'Product', 'Merk', 'Hoeveelheid', 'Eenheid', 'Calorieen', 'Eiwitten (g)', 'Vetten (g)', 'Koolhydraten (g)', 'Vezels (g)', 'Zout (g)', 'Suikers (g)', 'Verzadigd vet (g)', 'Calcium (mg)', 'IJzer (mg)', 'Kalium (mg)', 'Magnesium (mg)', 'Vitamine C (mg)', 'Bron']];
+  entries.forEach(({ date, day }) => {
+    normalizeNutritionData(day?.nutrition || day).mealEntries.forEach(entry => {
+      const value = scaleEntryNutrients(entry);
+      const mealLabel = MEAL_GROUPS.find(([key]) => key === entry.meal)?.[1] || entry.meal;
+      rows.push([date, mealLabel, entry.name, entry.brand, entry.directTotals ? '' : entry.amount, entry.directTotals ? '' : entry.unit, value.calories, value.protein, value.fat, value.carbs, value.fiber, value.salt, value.sugar, value.saturatedFat, value.calcium, value.iron, value.potassium, value.magnesium, value.vitaminC, entry.source]);
+    });
+  });
   return rows;
 }
 
@@ -5533,10 +5720,12 @@ function exportNutritionData() {
 
   const summaryRows = buildNutritionSummaryRowsForEntries(entries, range);
   const dataRows = buildNutritionRowsForEntries(entries);
+  const mealRows = buildNutritionMealRowsForEntries(entries);
 
   downloadWorkbookXml(getNutritionExportFilename(range, state.date || todayISO(), entries), [
     { name: 'Samenvatting', rows: summaryRows },
-    { name: 'Voeding', rows: dataRows }
+    { name: 'Voeding', rows: dataRows },
+    { name: 'Maaltijden', rows: mealRows }
   ]);
 }
 
@@ -5639,7 +5828,8 @@ function exportData() {
     days: all,
     routines: loadRoutines(),
     customExercises: loadCustomExerciseLibrary(),
-    progressEntries: loadProgressEntries()
+    progressEntries: loadProgressEntries(),
+    foodLibrary: loadFoodLibrary()
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
@@ -5674,6 +5864,7 @@ function importData(file) {
       if (data?.routines) saveRoutines(data.routines);
       if (Array.isArray(data?.customExercises)) saveCustomExerciseLibrary(data.customExercises);
       if (Array.isArray(data?.progressEntries)) saveProgressEntries(data.progressEntries);
+      if (Array.isArray(data?.foodLibrary)) localStorage.setItem(FOOD_LIBRARY_KEY, JSON.stringify(data.foodLibrary.map(normalizeFoodProduct).filter(Boolean)));
       loadDay(state.date);
       renderExercises();
       renderRoutinePage();
@@ -6403,6 +6594,69 @@ if (nutritionWakeTimeInput) {
   });
 }
 
+document.querySelectorAll('.nutrition-tab').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.nutrition-tab').forEach(item => item.classList.toggle('active', item === button));
+    document.querySelectorAll('.nutrition-tab-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.nutritionPanel === button.dataset.nutritionTab));
+  });
+});
+
+const foodSearchBtn = document.getElementById('foodSearchBtn');
+const foodBarcodeBtn = document.getElementById('foodBarcodeBtn');
+const quickFoodToggle = document.getElementById('quickFoodToggle');
+const quickFoodForm = document.getElementById('quickFoodForm');
+const customFoodForm = document.getElementById('customFoodForm');
+if (foodSearchBtn) foodSearchBtn.addEventListener('click', () => searchOpenFoodFacts());
+if (foodBarcodeBtn) foodBarcodeBtn.addEventListener('click', () => searchOpenFoodFacts(foodBarcodeInput?.value.trim()));
+if (foodSearchInput) foodSearchInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); searchOpenFoodFacts(); }
+});
+if (quickFoodToggle && quickFoodForm) quickFoodToggle.addEventListener('click', () => { quickFoodForm.hidden = !quickFoodForm.hidden; });
+if (quickFoodForm) quickFoodForm.addEventListener('submit', event => {
+  event.preventDefault();
+  const values = new FormData(quickFoodForm);
+  addFoodEntry({ name: values.get('name') || 'Snelle invoer', brand: '', source: 'quick', unit: 'g', nutrients: normalizeNutrients(Object.fromEntries(values)) }, { directTotals: true, amount: 100 });
+  quickFoodForm.reset();
+  quickFoodForm.elements.name.value = 'Snelle invoer';
+  quickFoodForm.hidden = true;
+});
+if (customFoodForm) customFoodForm.addEventListener('submit', event => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(customFoodForm));
+  const product = normalizeFoodProduct({ id: uid(), name: values.name, brand: values.brand, source: 'custom', nutrients: values });
+  if (!product) return;
+  saveFoodLibrary([...loadFoodLibrary(), product]);
+  customFoodForm.reset();
+});
+if (foodSearchResults) foodSearchResults.addEventListener('click', event => {
+  const button = event.target.closest('.add-search-food');
+  if (!button) return;
+  const product = currentFoodResults[Number(button.dataset.resultIndex)];
+  if (product) addFoodEntry(product);
+});
+if (nutritionMeals) nutritionMeals.addEventListener('click', event => {
+  const remove = event.target.closest('.remove-food-entry');
+  if (remove) {
+    state.nutrition.mealEntries = state.nutrition.mealEntries.filter(entry => entry.id !== remove.dataset.entryId);
+    persist(); renderNutritionPage(); return;
+  }
+  const choose = event.target.closest('.choose-meal');
+  if (choose && foodMealSelect) {
+    foodMealSelect.value = choose.dataset.meal;
+    document.querySelector('[data-nutrition-tab="meals"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    foodSearchInput?.focus();
+  }
+});
+if (customFoodList) customFoodList.addEventListener('click', event => {
+  const add = event.target.closest('.add-library-food');
+  const remove = event.target.closest('.delete-library-food');
+  if (add) {
+    const product = loadFoodLibrary().find(item => item.id === add.dataset.foodId);
+    if (product) addFoodEntry(product);
+  }
+  if (remove) saveFoodLibrary(loadFoodLibrary().filter(item => item.id !== remove.dataset.foodId));
+});
+
 if (startTimeInput) {
   startTimeInput.addEventListener('input', () => {
     state.startTime = startTimeInput.value;
@@ -6742,7 +6996,8 @@ function getCloudPayload() {
     days: all,
     routines: loadRoutines(),
     customExercises: loadCustomExerciseLibrary(),
-    progressEntries: loadProgressEntries()
+    progressEntries: loadProgressEntries(),
+    foodLibrary: loadFoodLibrary()
   };
 }
 
@@ -6753,6 +7008,7 @@ function applyCloudPayload(payload, options = {}) {
     : createEmptyRoutines();
   const nextExercises = Array.isArray(payload?.customExercises) ? payload.customExercises : [];
   const nextProgressEntries = Array.isArray(payload?.progressEntries) ? payload.progressEntries : [];
+  const nextFoodLibrary = Array.isArray(payload?.foodLibrary) ? payload.foodLibrary : loadFoodLibrary();
 
   window.__fitnessApplyingRemote = true;
   try {
@@ -6760,6 +7016,7 @@ function applyCloudPayload(payload, options = {}) {
     saveRoutines(nextRoutines);
     saveCustomExerciseLibrary(nextExercises);
     saveProgressEntries(nextProgressEntries);
+    localStorage.setItem(FOOD_LIBRARY_KEY, JSON.stringify(nextFoodLibrary.map(normalizeFoodProduct).filter(Boolean)));
     if (options.clearSessionProtection !== false) {
       sessionProtectedDates.clear();
     }
@@ -6771,6 +7028,7 @@ function applyCloudPayload(payload, options = {}) {
     refreshProgress();
     renderProgressTimeline();
     fillProgressDraft(progressDateInput?.value || activeDate);
+    renderCustomFoodLibrary();
   } finally {
     window.__fitnessApplyingRemote = false;
   }
@@ -6788,6 +7046,7 @@ window.fitnessApp = {
 
 function init() {
   loadSyncConfig();
+  if (foodMealSelect) foodMealSelect.innerHTML = MEAL_GROUPS.map(([key, label]) => `<option value="${key}">${label}</option>`).join('');
   setActivePage(getPreferredPage(), { skipScroll: true });
   selectedRoutineDay = getStoredRoutineDay();
   selectedDashboardWeek = getStoredDashboardWeek();

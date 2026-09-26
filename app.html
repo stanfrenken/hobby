@@ -1,10 +1,10 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="nl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20260506b" />
+  <link rel="stylesheet" href="styles.css?v=20260926a" />
 </head>
 <body>
   <div class="bg"></div>
@@ -341,12 +341,18 @@
             </div>
           </div>
 
-          <div class="nutrition-grid">
+          <div class="nutrition-subnav" role="tablist" aria-label="Voeding onderdelen">
+            <button class="nutrition-tab active" type="button" data-nutrition-tab="overview">Dagoverzicht</button>
+            <button class="nutrition-tab" type="button" data-nutrition-tab="meals">Maaltijden</button>
+            <button class="nutrition-tab" type="button" data-nutrition-tab="products">Mijn producten</button>
+          </div>
+
+          <div class="nutrition-grid nutrition-tab-panel active" data-nutrition-panel="overview">
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h2>Voeding van de dag</h2>
-                  <p>Vul je dagtotalen in voor calorieen en macro's.</p>
+                  <h2>Snelle dagcorrectie</h2>
+                  <p>Voor extra calorieen of macro's zonder product. Maaltijden worden automatisch opgeteld.</p>
                 </div>
                 <span id="nutritionDateBadge" class="badge">-</span>
               </div>
@@ -401,6 +407,61 @@
               </div>
               <div id="nutritionMacroPanel" class="nutrition-macro-panel"></div>
             </section>
+            <section class="panel panel-wide">
+              <div class="panel-header"><div><h2>Vezels & micronutrienten</h2><p>Automatisch berekend uit je ingevoerde producten; een streepje betekent dat productdata ontbreekt.</p></div></div>
+              <div id="nutritionMicros" class="nutrition-micros"></div>
+            </section>
+          </div>
+
+          <div class="nutrition-tab-panel" data-nutrition-panel="meals">
+            <section class="panel food-add-panel">
+              <div class="panel-header"><div><h2>Product toevoegen</h2><p>Zoek in Open Food Facts, gebruik een barcode of kies een eigen product.</p></div></div>
+              <div class="food-search-grid">
+                <label class="control"><span>Dagdeel</span><select id="foodMealSelect"></select></label>
+                <label class="control food-search-wide"><span>Product zoeken</span><input id="foodSearchInput" type="search" placeholder="Bijv. magere kwark of gehakt" /></label>
+                <button id="foodSearchBtn" class="primary" type="button">Zoeken</button>
+                <label class="control"><span>Barcode</span><input id="foodBarcodeInput" inputmode="numeric" placeholder="871..." /></label>
+                <button id="foodBarcodeBtn" class="ghost" type="button">Zoek barcode</button>
+                <label class="control"><span>Hoeveelheid (g/ml)</span><input id="foodAmountInput" type="number" min="0.1" step="0.1" value="100" /></label>
+                <button id="quickFoodToggle" class="ghost" type="button">+ Snelle invoer</button>
+              </div>
+              <p class="food-attribution">Productdata via Open Food Facts. Controleer bij twijfel altijd het etiket.</p>
+              <div id="foodSearchResults" class="food-search-results"></div>
+              <form id="quickFoodForm" class="food-inline-form" hidden>
+                <input name="name" placeholder="Omschrijving" value="Snelle invoer" />
+                <input name="calories" type="number" min="0" step="0.1" placeholder="kcal" required />
+                <input name="protein" type="number" min="0" step="0.1" placeholder="Eiwit g" />
+                <input name="fat" type="number" min="0" step="0.1" placeholder="Vet g" />
+                <input name="carbs" type="number" min="0" step="0.1" placeholder="Koolhydraten g" />
+                <button class="primary" type="submit">Toevoegen</button>
+              </form>
+            </section>
+            <div id="nutritionMeals" class="meal-grid"></div>
+          </div>
+
+          <div class="nutrition-tab-panel" data-nutrition-panel="products">
+            <section class="panel">
+              <div class="panel-header"><div><h2>Eigen product opslaan</h2><p>Vul de voedingswaarden per 100 gram of milliliter in. Daarna staat het altijd klaar.</p></div></div>
+              <form id="customFoodForm" class="custom-food-form">
+                <input name="name" placeholder="Productnaam" required />
+                <input name="brand" placeholder="Merk (optioneel)" />
+                <input name="calories" type="number" min="0" step="0.1" placeholder="kcal" required />
+                <input name="protein" type="number" min="0" step="0.1" placeholder="Eiwit g" />
+                <input name="fat" type="number" min="0" step="0.1" placeholder="Vet g" />
+                <input name="carbs" type="number" min="0" step="0.1" placeholder="Koolhydraten g" />
+                <input name="fiber" type="number" min="0" step="0.1" placeholder="Vezels g" />
+                <input name="salt" type="number" min="0" step="0.1" placeholder="Zout g" />
+                <input name="sugar" type="number" min="0" step="0.1" placeholder="Suikers g" />
+                <input name="saturatedFat" type="number" min="0" step="0.1" placeholder="Verzadigd vet g" />
+                <input name="calcium" type="number" min="0" step="0.1" placeholder="Calcium mg" />
+                <input name="iron" type="number" min="0" step="0.1" placeholder="IJzer mg" />
+                <input name="potassium" type="number" min="0" step="0.1" placeholder="Kalium mg" />
+                <input name="magnesium" type="number" min="0" step="0.1" placeholder="Magnesium mg" />
+                <input name="vitaminC" type="number" min="0" step="0.1" placeholder="Vitamine C mg" />
+                <button class="primary" type="submit">Product bewaren</button>
+              </form>
+            </section>
+            <div id="customFoodList" class="custom-food-list"></div>
           </div>
         </div>
       </section>
@@ -738,7 +799,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260506a"></script>
+  <script src="app.js?v=20260926a"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>
