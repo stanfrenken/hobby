@@ -1212,10 +1212,13 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .routine-plan-head > div { display:grid; gap:3px; }
 .routine-plan-head span,.routine-sets-empty { color:var(--muted); font-size:.78rem; }
 .routine-plan-settings { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.routine-quick-plan { display:grid; grid-template-columns:repeat(3,minmax(110px,1fr)) auto; gap:10px; align-items:end; padding:12px; border:1px dashed var(--line); border-radius:12px; background:#fff; }
 .routine-card:not(.is-percentage-plan) .routine-tm-control,
 .routine-card:not(.is-percentage-plan) .routine-rounding-control,
-.routine-card:not(.is-percentage-plan) .routine-percentage { display:none; }
-.routine-card.is-percentage-plan .routine-fixed-weight { display:none; }
+.routine-card:not(.is-percentage-plan) .routine-percentage,
+.routine-card:not(.is-percentage-plan) .routine-quick-percentage { display:none; }
+.routine-card.is-percentage-plan .routine-fixed-weight,
+.routine-card.is-percentage-plan .routine-quick-fixed { display:none; }
 .routine-planned-sets { display:grid; gap:8px; }
 .routine-set-row { display:grid; grid-template-columns:30px minmax(90px,1fr) minmax(110px,1fr) minmax(110px,1fr) 32px; gap:9px; align-items:end; padding:9px; border-radius:11px; background:#fff; }
 .routine-set-row label,.routine-calculated { display:grid; gap:4px; }
@@ -1766,6 +1769,8 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .routine-head { grid-template-columns: 1fr; }
   .routine-option-bar { grid-template-columns: 1fr; }
   .routine-plan-settings { grid-template-columns:1fr; }
+  .routine-quick-plan { grid-template-columns:1fr 1fr; }
+  .routine-quick-plan .primary { grid-column:1/-1; width:100%; }
   .routine-set-row { grid-template-columns:28px 1fr 1fr 32px; }
   .routine-calculated { grid-column:2/4; }
   .secondary-picker { padding: 8px; }

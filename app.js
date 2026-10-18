@@ -7168,6 +7168,23 @@ if (routineList) {
     const option = ensureRoutineOption(routines, selectedRoutineDay);
     const item = option?.exercises.find(entry => entry.id === card.dataset.id);
     if (!item) return;
+    if (event.target.classList.contains('apply-routine-quick-sets')) {
+      const count = Math.max(0, Math.floor(Number(card.querySelector('.routine-quick-count')?.value || 0)));
+      const reps = card.querySelector('.routine-quick-reps')?.value ?? '';
+      const weight = card.querySelector('.routine-quick-weight')?.value ?? '';
+      const percentage = card.querySelector('.routine-quick-percent')?.value ?? '';
+      const loadReady = item.weightMode === 'percentage' ? hasInputValue(percentage) : hasInputValue(weight);
+      if (!count || !hasInputValue(reps) || !loadReady) {
+        alert(item.weightMode === 'percentage'
+          ? 'Vul aantal sets, reps en percentage van TM in.'
+          : 'Vul aantal sets, reps en gewicht in.');
+        return;
+      }
+      item.plannedSets = Array.from({ length: count }, () => normalizeRoutinePlannedSet({ reps, weight, percentage }));
+      persistRoutines(routines, { rerenderRoutine: false });
+      renderRoutinePlannedSets(card, item, getExerciseCatalog(getCurrentDataSnapshot()));
+      return;
+    }
     if (event.target.classList.contains('add-routine-set')) {
       item.plannedSets.push(normalizeRoutinePlannedSet({}));
       persistRoutines(routines, { rerenderRoutine: false });
