@@ -278,7 +278,19 @@ function normalizeRoutineExercise(item) {
     secondaryGroups: normalizeSecondaryGroups(
       item?.secondaryGroups ?? item?.secondaryGroup ?? item?.secondary,
       sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || ''
-    )
+    ),
+    weightMode: item?.weightMode === 'percentage' ? 'percentage' : 'fixed',
+    roundingIncrement: Number(item?.roundingIncrement) === 1.25 ? 1.25 : 2.5,
+    plannedSets: Array.isArray(item?.plannedSets) ? item.plannedSets.map(normalizeRoutinePlannedSet) : []
+  };
+}
+
+function normalizeRoutinePlannedSet(set) {
+  return {
+    id: String(set?.id || uid()),
+    reps: set?.reps ?? '',
+    weight: set?.weight ?? '',
+    percentage: set?.percentage ?? ''
   };
 }
 
@@ -371,7 +383,8 @@ function loadCustomExerciseLibrary() {
         name: item?.name,
         primary: item?.primary,
         secondaryGroups: item?.secondaryGroups ?? item?.secondary,
-        nextTarget: item?.nextTarget
+        nextTarget: item?.nextTarget,
+        trainingMax: item?.trainingMax
       }))
       .filter(item => item.name);
   } catch {
@@ -1044,7 +1057,7 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
     if (selectInput) selectInput.value = '';
     if (primarySelect) primarySelect.value = 'Automatisch';
     renderSecondaryPicker(secondaryPicker, [], '', 'exercise-secondary');
-    renderNextTargetInputs(card, null);
+    renderNextTargetInputs(card, null, '');
     return { didPrefill: false };
   }
 
@@ -1060,7 +1073,7 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
   }
   if (primarySelect) primarySelect.value = exercise.primaryGroup || 'Automatisch';
   renderSecondaryPicker(secondaryPicker, exercise.secondaryGroups, exercise.primaryGroup, 'exercise-secondary');
-  renderNextTargetInputs(card, nextTarget);
+  renderNextTargetInputs(card, nextTarget, profile.trainingMax);
   return { didPrefill };
 }
 
@@ -1103,6 +1116,7 @@ function saveExerciseProfileToLibrary(exercise) {
   if (existing?.nextTarget) {
     profile.nextTarget = normalizeExerciseTarget(existing.nextTarget);
   }
+  if (hasInputValue(existing?.trainingMax)) profile.trainingMax = existing.trainingMax;
   const library = currentLibrary.filter(item => normalizeExerciseName(item.name) !== key);
 
   library.push(profile);
@@ -1128,6 +1142,8 @@ function saveExerciseNextTarget(exercise, card) {
   if (!name) return { ok: false, message: 'Geef eerst een naam aan je oefening.' };
 
   const target = readNextTargetFromCard(card, !!exercise.splitWeightMode);
+  const trainingMaxInput = card.querySelector('.next-target-tm');
+  const trainingMax = trainingMaxInput && hasInputValue(trainingMaxInput.value) ? Number(trainingMaxInput.value) : '';
   if (!hasExerciseTarget(target)) {
     return { ok: false, message: 'Vul voor je volgende keer minstens sets en reps of gewicht in.' };
   }
@@ -1143,12 +1159,48 @@ function saveExerciseNextTarget(exercise, card) {
     name,
     primary: resolveExerciseMuscles(exercise).primary,
     secondaryGroups: resolveExerciseMuscles(exercise).secondaryGroups,
-    nextTarget: target
+    nextTarget: target,
+    trainingMax
   });
 
+  const routineCount = countRoutineOccurrences(name);
   return saved
-    ? { ok: true, message: 'Target opgeslagen.' }
+    ? { ok: true, message: hasInputValue(trainingMax) ? `Target opgeslagen. TM ${formatNumber(trainingMax)} kg werkt door in ${routineCount} vaste schema${routineCount === 1 ? '' : "'s"}.` : 'Target opgeslagen.' }
     : { ok: false, message: 'Kon je target niet opslaan.' };
+}
+
+function countRoutineOccurrences(name) {
+  const key = normalizeExerciseName(name);
+  return Object.values(loadRoutines()).flat().reduce((count, option) => count + (option.exercises || []).filter(item => normalizeExerciseName(item.name) === key).length, 0);
+}
+
+function updateExerciseTrainingMax(name, value) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return false;
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+  const current = getAutoExerciseProfile(cleanName, catalog) || normalizeExerciseProfile({ name: cleanName, primary: 'Overig' });
+  return upsertExerciseLibraryProfile({ ...current, name: cleanName, trainingMax: hasInputValue(value) ? Number(value) : '' });
+}
+
+function getExerciseTrainingMax(name, catalog = null) {
+  return getAutoExerciseProfile(name, catalog || getExerciseCatalog(getCurrentDataSnapshot()))?.trainingMax ?? '';
+}
+
+function roundRoutineWeight(value, increment) {
+  const step = Number(increment) === 1.25 ? 1.25 : 2.5;
+  return Math.round((Number(value) || 0) / step) * step;
+}
+
+function getRoutineSetWeight(item, set, catalog = null) {
+  if (item?.weightMode !== 'percentage') return set?.weight ?? '';
+  const tm = Number(getExerciseTrainingMax(item.name, catalog));
+  const percentage = Number(set?.percentage);
+  if (!tm || !percentage) return '';
+  return Math.round(roundRoutineWeight(tm * percentage / 100, item.roundingIncrement) * 100) / 100;
+}
+
+function getFilledRoutineSets(item) {
+  return (item?.plannedSets || []).filter(set => hasInputValue(set.reps) || (item.weightMode === 'percentage' ? hasInputValue(set.percentage) : hasInputValue(set.weight)));
 }
 
 function hasInputValue(value) {
@@ -1251,7 +1303,7 @@ function syncExerciseSplitMode(exercise, splitMode) {
   });
 }
 
-function renderNextTargetInputs(card, target = null) {
+function renderNextTargetInputs(card, target = null, trainingMax = '') {
   if (!card) return;
   const normalized = normalizeExerciseTarget(target);
   const fieldMap = {
@@ -1271,6 +1323,8 @@ function renderNextTargetInputs(card, target = null) {
     const input = card.querySelector(selector);
     if (input) input.value = value ?? '';
   });
+  const tmInput = card.querySelector('.next-target-tm');
+  if (tmInput) tmInput.value = trainingMax ?? '';
 
   const detailedToggle = card.querySelector('.next-target-detailed-toggle');
   if (detailedToggle) detailedToggle.checked = isDetailedExerciseTarget(normalized);
@@ -1536,7 +1590,7 @@ function renderExercises() {
       'exercise-secondary'
     );
     card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(displayProfile?.nextTarget));
-    renderNextTargetInputs(card, displayProfile?.nextTarget || null);
+    renderNextTargetInputs(card, displayProfile?.nextTarget || null, displayProfile?.trainingMax ?? '');
 
     const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
     if (previousSessionEl) {
@@ -1590,6 +1644,8 @@ function applyRoutineProfile(item, card, profile, catalog) {
     if (selectInput) selectInput.value = '';
     if (primarySelect) primarySelect.value = 'Automatisch';
     renderSecondaryPicker(secondaryPicker, [], '', 'routine-secondary');
+    const tmInput = card?.querySelector('.routine-training-max');
+    if (tmInput) tmInput.value = '';
     return;
   }
 
@@ -1604,6 +1660,48 @@ function applyRoutineProfile(item, card, profile, catalog) {
   }
   if (primarySelect) primarySelect.value = item.primaryGroup || 'Automatisch';
   renderSecondaryPicker(secondaryPicker, item.secondaryGroups, item.primaryGroup, 'routine-secondary');
+  const tmInput = card?.querySelector('.routine-training-max');
+  if (tmInput) tmInput.value = profile.trainingMax ?? '';
+  renderRoutinePlannedSets(card, item, catalog);
+}
+
+function renderRoutinePlannedSets(card, item, catalog = null) {
+  if (!card) return;
+  const container = card.querySelector('.routine-planned-sets');
+  const mode = item.weightMode === 'percentage' ? 'percentage' : 'fixed';
+  card.classList.toggle('is-percentage-plan', mode === 'percentage');
+  const modeInput = card.querySelector('.routine-weight-mode');
+  const roundingInput = card.querySelector('.routine-rounding');
+  const tmInput = card.querySelector('.routine-training-max');
+  if (modeInput) modeInput.value = mode;
+  if (roundingInput) roundingInput.value = String(item.roundingIncrement || 2.5);
+  if (tmInput) tmInput.value = getExerciseTrainingMax(item.name, catalog) ?? '';
+  if (!container) return;
+  container.innerHTML = (item.plannedSets || []).map((set, index) => {
+    const calculated = getRoutineSetWeight(item, set, catalog);
+    return `<div class="routine-set-row" data-set-id="${set.id}"><span class="routine-set-index">${index + 1}</span><label><span>Reps</span><input class="routine-set-reps" type="number" min="0" step="1" value="${set.reps ?? ''}" /></label><label class="routine-fixed-weight"><span>Gewicht</span><input class="routine-set-weight" type="number" min="0" step="0.25" value="${set.weight ?? ''}" /></label><label class="routine-percentage"><span>% TM</span><input class="routine-set-percentage" type="number" min="0" step="0.25" value="${set.percentage ?? ''}" /></label><div class="routine-calculated"><span>Werkgewicht</span><strong>${calculated === '' ? '-' : `${formatNumber(calculated)} kg`}</strong></div><button class="remove-routine-set" type="button" title="Verwijder set">x</button></div>`;
+  }).join('') || '<p class="routine-sets-empty">Nog geen sets gepland.</p>';
+}
+
+function refreshRoutineCalculatedWeights() {
+  const routines = loadRoutines();
+  const option = ensureRoutineOption(routines, selectedRoutineDay);
+  if (!option) return;
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
+  routineList?.querySelectorAll('.routine-card').forEach(card => {
+    const item = option.exercises.find(entry => entry.id === card.dataset.id);
+    if (item) renderRoutinePlannedSets(card, item, catalog);
+  });
+}
+
+function updateRoutinePlanCalculated(card, item, catalog = null) {
+  card?.querySelectorAll('.routine-set-row').forEach(row => {
+    const set = item.plannedSets.find(entry => entry.id === row.dataset.setId);
+    const output = row.querySelector('.routine-calculated strong');
+    if (!set || !output) return;
+    const value = getRoutineSetWeight(item, set, catalog);
+    output.textContent = value === '' ? '-' : `${formatNumber(value)} kg`;
+  });
 }
 
 function getStoredRoutineDay() {
@@ -1758,6 +1856,7 @@ function renderRoutinePage() {
       item.primaryGroup || profile?.primary || '',
       'routine-secondary'
     );
+    renderRoutinePlannedSets(card, item, getExerciseCatalog(getCurrentDataSnapshot()));
 
     routineList.appendChild(card);
   });
@@ -1776,7 +1875,10 @@ function addRoutineExercise() {
     name: '',
     notes: '',
     primaryGroup: '',
-    secondaryGroups: []
+    secondaryGroups: [],
+    weightMode: 'fixed',
+    roundingIncrement: 2.5,
+    plannedSets: []
   });
   persistRoutines(routines);
   requestAnimationFrame(() => {
@@ -1879,6 +1981,43 @@ function handleRoutineInputChange(target) {
     item.notes = target.value;
   }
 
+  if (target.classList.contains('routine-weight-mode')) {
+    item.weightMode = target.value === 'percentage' ? 'percentage' : 'fixed';
+    renderRoutinePlannedSets(card, item, catalog);
+  }
+
+  if (target.classList.contains('routine-rounding')) {
+    item.roundingIncrement = Number(target.value) === 1.25 ? 1.25 : 2.5;
+    renderRoutinePlannedSets(card, item, catalog);
+  }
+
+  if (target.classList.contains('routine-training-max')) {
+    updateExerciseTrainingMax(item.name, target.value);
+    const freshCatalog = getExerciseCatalog(getCurrentDataSnapshot());
+    const key = normalizeExerciseName(item.name);
+    routineList?.querySelectorAll('.routine-card').forEach(otherCard => {
+      const otherItem = option.exercises.find(entry => entry.id === otherCard.dataset.id);
+      if (otherItem && normalizeExerciseName(otherItem.name) === key) {
+        const field = otherCard.querySelector('.routine-training-max');
+        if (field && field !== target) field.value = target.value;
+        updateRoutinePlanCalculated(otherCard, otherItem, freshCatalog);
+      }
+    });
+  }
+
+  const setRow = target.closest('.routine-set-row');
+  if (setRow) {
+    const set = item.plannedSets.find(entry => entry.id === setRow.dataset.setId);
+    if (set) {
+      if (target.classList.contains('routine-set-reps')) set.reps = target.value;
+      if (target.classList.contains('routine-set-weight')) set.weight = target.value;
+      if (target.classList.contains('routine-set-percentage')) set.percentage = target.value;
+      const calculated = setRow.querySelector('.routine-calculated strong');
+      const value = getRoutineSetWeight(item, set, catalog);
+      if (calculated) calculated.textContent = value === '' ? '-' : `${formatNumber(value)} kg`;
+    }
+  }
+
   persistRoutines(routines, { rerenderRoutine: false });
 }
 
@@ -1904,6 +2043,7 @@ function addRoutineExercisesToCurrentDay() {
   }
 
   toAdd.forEach(item => {
+    const plannedSets = getFilledRoutineSets(item);
     const exercise = {
       id: uid(),
       name: item.name,
@@ -1912,10 +2052,12 @@ function addRoutineExercisesToCurrentDay() {
       primaryGroup: item.primaryGroup || '',
       secondaryGroups: [...(item.secondaryGroups || [])],
       splitWeightMode: false,
-      sets: [newSet()]
+      sets: plannedSets.length
+        ? plannedSets.map(set => newSet({ reps: set.reps, weight: getRoutineSetWeight(item, set, catalog), weightMode: 'single' }))
+        : [newSet()]
     };
     const profile = getAutoExerciseProfile(item.name, catalog);
-    applyExerciseTargetIfNeeded(exercise, profile?.nextTarget);
+    if (!plannedSets.length) applyExerciseTargetIfNeeded(exercise, profile?.nextTarget);
     state.exercises.push(exercise);
   });
 
@@ -2723,6 +2865,7 @@ function handleInputChange(target) {
     || target.classList.contains('next-target-weight')
     || target.classList.contains('next-target-left-weight')
     || target.classList.contains('next-target-right-weight')
+    || target.classList.contains('next-target-tm')
     || target.classList.contains('next-target-note')
     || target.classList.contains('target-set-reps')
     || target.classList.contains('target-set-left-reps')
@@ -3223,7 +3366,8 @@ function normalizeExerciseProfile(profile) {
     primary,
     secondaryGroups,
     secondary: secondaryGroups[0] || '',
-    nextTarget: normalizeExerciseTarget(profile?.nextTarget)
+    nextTarget: normalizeExerciseTarget(profile?.nextTarget),
+    trainingMax: hasInputValue(profile?.trainingMax) && Number.isFinite(Number(profile.trainingMax)) ? Number(profile.trainingMax) : ''
   };
 }
 
@@ -3281,14 +3425,14 @@ function isDetailedExerciseTarget(target) {
 
 function mergeExerciseProfiles(current, incoming) {
   const base = normalizeExerciseProfile(incoming);
-  if (hasExerciseTarget(base.nextTarget)) return base;
-  if (current && hasExerciseTarget(current.nextTarget)) {
-    return {
-      ...base,
-      nextTarget: normalizeExerciseTarget(current.nextTarget)
-    };
+  const merged = { ...base };
+  if (!hasExerciseTarget(base.nextTarget) && current && hasExerciseTarget(current.nextTarget)) {
+    merged.nextTarget = normalizeExerciseTarget(current.nextTarget);
   }
-  return base;
+  if (!hasInputValue(base.trainingMax) && current && hasInputValue(current.trainingMax)) {
+    merged.trainingMax = current.trainingMax;
+  }
+  return merged;
 }
 
 function classifyExercise(name) {
@@ -7016,6 +7160,25 @@ if (routineList) {
     if (event.target.classList.contains('remove-routine')) {
       const card = event.target.closest('.routine-card');
       if (card) removeRoutineExercise(card.dataset.id);
+      return;
+    }
+    const card = event.target.closest('.routine-card');
+    if (!card) return;
+    const routines = loadRoutines();
+    const option = ensureRoutineOption(routines, selectedRoutineDay);
+    const item = option?.exercises.find(entry => entry.id === card.dataset.id);
+    if (!item) return;
+    if (event.target.classList.contains('add-routine-set')) {
+      item.plannedSets.push(normalizeRoutinePlannedSet({}));
+      persistRoutines(routines, { rerenderRoutine: false });
+      renderRoutinePlannedSets(card, item, getExerciseCatalog(getCurrentDataSnapshot()));
+      return;
+    }
+    if (event.target.classList.contains('remove-routine-set')) {
+      const row = event.target.closest('.routine-set-row');
+      item.plannedSets = item.plannedSets.filter(set => set.id !== row?.dataset.setId);
+      persistRoutines(routines, { rerenderRoutine: false });
+      renderRoutinePlannedSets(card, item, getExerciseCatalog(getCurrentDataSnapshot()));
     }
   });
 }
@@ -7103,6 +7266,8 @@ exerciseList.addEventListener('click', event => {
       const currentExercise = state.exercises.find(ex => ex.id === currentCard.dataset.id);
       populateExerciseSelect(select, catalog, currentExercise?.name || '');
     });
+    const targetStatus = card.querySelector('.next-target-head .sub');
+    if (targetStatus) targetStatus.textContent = result.message;
     flashButtonLabel(event.target, 'Target bewaard', 1100);
     return;
   }

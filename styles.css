@@ -1207,6 +1207,23 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   min-height: 70px;
   resize: vertical;
 }
+.routine-plan { display:grid; gap:12px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface-soft); }
+.routine-plan-head { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.routine-plan-head > div { display:grid; gap:3px; }
+.routine-plan-head span,.routine-sets-empty { color:var(--muted); font-size:.78rem; }
+.routine-plan-settings { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.routine-card:not(.is-percentage-plan) .routine-tm-control,
+.routine-card:not(.is-percentage-plan) .routine-rounding-control,
+.routine-card:not(.is-percentage-plan) .routine-percentage { display:none; }
+.routine-card.is-percentage-plan .routine-fixed-weight { display:none; }
+.routine-planned-sets { display:grid; gap:8px; }
+.routine-set-row { display:grid; grid-template-columns:30px minmax(90px,1fr) minmax(110px,1fr) minmax(110px,1fr) 32px; gap:9px; align-items:end; padding:9px; border-radius:11px; background:#fff; }
+.routine-set-row label,.routine-calculated { display:grid; gap:4px; }
+.routine-set-row label span,.routine-calculated span { color:var(--muted); font-size:.68rem; font-weight:800; }
+.routine-set-row input { width:100%; min-height:38px; padding:7px 9px; border:1px solid var(--line); border-radius:9px; font:inherit; }
+.routine-set-index { align-self:center; font-weight:900; color:var(--accent); }
+.routine-calculated strong { min-height:38px; display:flex; align-items:center; }
+.remove-routine-set { width:32px; height:32px; margin-bottom:3px; border:0; border-radius:50%; background:#f2e5e1; color:#8b3f36; font-weight:900; cursor:pointer; }
 
 .sets-head, .set-row {
   display: grid;
@@ -1748,6 +1765,9 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   }
   .routine-head { grid-template-columns: 1fr; }
   .routine-option-bar { grid-template-columns: 1fr; }
+  .routine-plan-settings { grid-template-columns:1fr; }
+  .routine-set-row { grid-template-columns:28px 1fr 1fr 32px; }
+  .routine-calculated { grid-column:2/4; }
   .secondary-picker { padding: 8px; }
   .progress-controls { grid-template-columns: 1fr; }
   .progress-ai-card { grid-template-columns: 1fr; }
