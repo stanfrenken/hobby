@@ -1220,7 +1220,10 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .routine-card.is-percentage-plan .routine-fixed-weight,
 .routine-card.is-percentage-plan .routine-quick-fixed { display:none; }
 .routine-planned-sets { display:grid; gap:8px; }
-.routine-set-row { display:grid; grid-template-columns:30px minmax(90px,1fr) minmax(110px,1fr) minmax(110px,1fr) 32px; gap:9px; align-items:end; padding:9px; border-radius:11px; background:#fff; }
+.routine-set-list-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding-top:4px; }
+.routine-set-list-head > div { display:grid; gap:2px; }
+.routine-set-list-head span { color:var(--muted); font-size:.75rem; }
+.routine-set-row { display:grid; grid-template-columns:58px minmax(90px,1fr) minmax(110px,1fr) minmax(110px,1fr) 32px; gap:9px; align-items:end; padding:9px; border-radius:11px; background:#fff; }
 .routine-set-row label,.routine-calculated { display:grid; gap:4px; }
 .routine-set-row label span,.routine-calculated span { color:var(--muted); font-size:.68rem; font-weight:800; }
 .routine-set-row input { width:100%; min-height:38px; padding:7px 9px; border:1px solid var(--line); border-radius:9px; font:inherit; }
@@ -1771,7 +1774,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .routine-plan-settings { grid-template-columns:1fr; }
   .routine-quick-plan { grid-template-columns:1fr 1fr; }
   .routine-quick-plan .primary { grid-column:1/-1; width:100%; }
-  .routine-set-row { grid-template-columns:28px 1fr 1fr 32px; }
+  .routine-set-row { grid-template-columns:52px 1fr 1fr 32px; }
   .routine-calculated { grid-column:2/4; }
   .secondary-picker { padding: 8px; }
   .progress-controls { grid-template-columns: 1fr; }

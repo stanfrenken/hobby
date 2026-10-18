@@ -1677,10 +1677,13 @@ function renderRoutinePlannedSets(card, item, catalog = null) {
   if (roundingInput) roundingInput.value = String(item.roundingIncrement || 2.5);
   if (tmInput) tmInput.value = getExerciseTrainingMax(item.name, catalog) ?? '';
   if (!container) return;
-  container.innerHTML = (item.plannedSets || []).map((set, index) => {
+  const setRows = (item.plannedSets || []).map((set, index) => {
     const calculated = getRoutineSetWeight(item, set, catalog);
-    return `<div class="routine-set-row" data-set-id="${set.id}"><span class="routine-set-index">${index + 1}</span><label><span>Reps</span><input class="routine-set-reps" type="number" min="0" step="1" value="${set.reps ?? ''}" /></label><label class="routine-fixed-weight"><span>Gewicht</span><input class="routine-set-weight" type="number" min="0" step="0.25" value="${set.weight ?? ''}" /></label><label class="routine-percentage"><span>% TM</span><input class="routine-set-percentage" type="number" min="0" step="0.25" value="${set.percentage ?? ''}" /></label><div class="routine-calculated"><span>Werkgewicht</span><strong>${calculated === '' ? '-' : `${formatNumber(calculated)} kg`}</strong></div><button class="remove-routine-set" type="button" title="Verwijder set">x</button></div>`;
-  }).join('') || '<p class="routine-sets-empty">Nog geen sets gepland.</p>';
+    return `<div class="routine-set-row" data-set-id="${set.id}"><span class="routine-set-index">Set ${index + 1}</span><label><span>Reps voor set ${index + 1}</span><input class="routine-set-reps" type="number" min="0" step="1" value="${set.reps ?? ''}" /></label><label class="routine-fixed-weight"><span>Gewicht set ${index + 1}</span><input class="routine-set-weight" type="number" min="0" step="0.25" value="${set.weight ?? ''}" /></label><label class="routine-percentage"><span>% TM set ${index + 1}</span><input class="routine-set-percentage" type="number" min="0" step="0.25" value="${set.percentage ?? ''}" /></label><div class="routine-calculated"><span>Werkgewicht set ${index + 1}</span><strong>${calculated === '' ? '-' : `${formatNumber(calculated)} kg`}</strong></div><button class="remove-routine-set" type="button" title="Verwijder set">x</button></div>`;
+  }).join('');
+  container.innerHTML = setRows
+    ? `<div class="routine-set-list-head"><div><strong>Setplanning</strong><span>Iedere set is afzonderlijk aanpasbaar.</span></div><span>${item.plannedSets.length} set${item.plannedSets.length === 1 ? '' : 's'}</span></div>${setRows}`
+    : '<p class="routine-sets-empty">Nog geen sets gepland. Gebruik de snelle invoer of voeg een lege set toe.</p>';
 }
 
 function refreshRoutineCalculatedWeights() {
@@ -7183,6 +7186,7 @@ if (routineList) {
       item.plannedSets = Array.from({ length: count }, () => normalizeRoutinePlannedSet({ reps, weight, percentage }));
       persistRoutines(routines, { rerenderRoutine: false });
       renderRoutinePlannedSets(card, item, getExerciseCatalog(getCurrentDataSnapshot()));
+      card.querySelector('.routine-planned-sets')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
     }
     if (event.target.classList.contains('add-routine-set')) {
