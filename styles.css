@@ -991,6 +991,25 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+.routine-target-link-banner { display:grid; gap:3px; margin:12px 0; padding:11px 13px; border:1px solid rgba(54,112,75,.22); border-radius:12px; background:rgba(225,241,229,.72); }
+.routine-target-link-banner[hidden] { display:none; }
+.routine-target-link-banner strong { color:var(--accent); }
+.routine-target-link-banner span { color:var(--muted); font-size:.78rem; }
+.percentage-target-editor { display:grid; gap:10px; margin:12px 0; }
+.percentage-target-editor[hidden] { display:none; }
+.percentage-target-toolbar { display:flex; justify-content:space-between; gap:12px; align-items:end; }
+.percentage-target-toolbar .control { min-width:150px; }
+.percentage-target-sets { display:grid; gap:8px; }
+.percentage-target-set-row { display:grid; grid-template-columns:56px minmax(90px,1fr) minmax(90px,1fr) minmax(110px,1fr) 32px; gap:9px; align-items:end; padding:9px; border-radius:11px; background:#fff; border:1px solid var(--line); }
+.percentage-target-set-row > span { align-self:center; font-weight:900; color:var(--accent); }
+.percentage-target-set-row label,.percentage-target-set-row > div { display:grid; gap:4px; }
+.percentage-target-set-row label span,.percentage-target-set-row > div span { color:var(--muted); font-size:.68rem; font-weight:800; }
+.percentage-target-set-row input { width:100%; min-height:38px; padding:7px 9px; border:1px solid var(--line); border-radius:9px; font:inherit; }
+.percentage-target-set-row strong { min-height:38px; display:flex; align-items:center; }
+.remove-percentage-target-set { width:32px; height:32px; margin-bottom:3px; border:0; border-radius:50%; background:#f2e5e1; color:#8b3f36; font-weight:900; cursor:pointer; }
+.exercise-card.is-routine-percentage-target .next-target-grid .target-control:not(:first-child),
+.exercise-card.is-routine-percentage-target .target-sets-editor,
+.exercise-card.is-routine-percentage-target .next-target-note-control { display:none; }
 
 .next-target-head {
   display: flex;
@@ -1757,6 +1776,9 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .next-target-head { grid-template-columns: 1fr; display: grid; }
   .next-target-actions { justify-content: stretch; }
   .next-target-grid { grid-template-columns: 1fr 1fr; }
+  .percentage-target-toolbar { display:grid; grid-template-columns:1fr; }
+  .percentage-target-set-row { grid-template-columns:52px 1fr 1fr 32px; }
+  .percentage-target-set-row > div { grid-column:2/4; }
   .exercise-card.is-split-mode .quick-grid,
   .exercise-card.is-split-mode .next-target-grid {
     min-width: 620px;

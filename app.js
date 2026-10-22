@@ -294,6 +294,27 @@ function normalizeRoutinePlannedSet(set) {
   };
 }
 
+function normalizeExerciseRoutineLink(link) {
+  if (!link || typeof link !== 'object') return null;
+  const dayKey = ROUTINE_DAYS.some(day => day.key === link.dayKey) ? link.dayKey : '';
+  if (!dayKey || !link.optionId || !link.routineExerciseId) return null;
+  return {
+    dayKey,
+    optionId: String(link.optionId),
+    routineExerciseId: String(link.routineExerciseId),
+    optionName: String(link.optionName || '')
+  };
+}
+
+function normalizeRoutineTargetSnapshot(target) {
+  if (!target || typeof target !== 'object') return null;
+  return {
+    weightMode: target.weightMode === 'percentage' ? 'percentage' : 'fixed',
+    roundingIncrement: Number(target.roundingIncrement) === 1.25 ? 1.25 : 2.5,
+    plannedSets: Array.isArray(target.plannedSets) ? target.plannedSets.map(normalizeRoutinePlannedSet) : []
+  };
+}
+
 const syncState = {
   url: '',
   sheetId: '',
@@ -678,6 +699,8 @@ function normalizeAllData(data) {
       rating: normalizeRatingValue(ex?.rating),
       primaryGroup: sanitizeMuscleGroup(ex?.primaryGroup) || '',
       secondaryGroups: normalizeSecondaryGroups(ex?.secondaryGroups ?? ex?.secondaryGroup, sanitizeMuscleGroup(ex?.primaryGroup) || ''),
+      routineLink: normalizeExerciseRoutineLink(ex?.routineLink),
+      routineTargetSnapshot: normalizeRoutineTargetSnapshot(ex?.routineTargetSnapshot),
       splitWeightMode: !!ex?.splitWeightMode || (Array.isArray(ex?.sets) && ex.sets.some(set => (set?.weightMode === 'split') || (set?.leftWeight ?? '') !== '' || (set?.rightWeight ?? '') !== '')),
       sets: Array.isArray(ex?.sets)
         ? ex.sets.map(set => ({
@@ -763,6 +786,8 @@ function loadDay(date) {
       rating: normalizeRatingValue(ex.rating),
       primaryGroup: sanitizeMuscleGroup(ex.primaryGroup) || '',
     secondaryGroups: normalizeSecondaryGroups(ex.secondaryGroups ?? ex.secondaryGroup, sanitizeMuscleGroup(ex.primaryGroup) || ''),
+    routineLink: normalizeExerciseRoutineLink(ex.routineLink),
+    routineTargetSnapshot: normalizeRoutineTargetSnapshot(ex.routineTargetSnapshot),
     splitWeightMode: !!ex.splitWeightMode || (Array.isArray(ex.sets) && ex.sets.some(set => (set?.weightMode === 'split') || (set?.leftWeight ?? '') !== '' || (set?.rightWeight ?? '') !== '')),
     sets: (ex.sets || []).map(set => ({
       id: set.id || uid(),
@@ -1141,6 +1166,9 @@ function saveExerciseNextTarget(exercise, card) {
   const name = String(exercise.name || '').trim();
   if (!name) return { ok: false, message: 'Geef eerst een naam aan je oefening.' };
 
+  const routineContext = resolveExerciseRoutineContext(exercise);
+  if (routineContext) return saveLinkedRoutineExerciseTarget(exercise, card, routineContext);
+
   const target = readNextTargetFromCard(card, !!exercise.splitWeightMode);
   const trainingMaxInput = card.querySelector('.next-target-tm');
   const trainingMax = trainingMaxInput && hasInputValue(trainingMaxInput.value) ? Number(trainingMaxInput.value) : '';
@@ -1167,6 +1195,53 @@ function saveExerciseNextTarget(exercise, card) {
   return saved
     ? { ok: true, message: hasInputValue(trainingMax) ? `Target opgeslagen. TM ${formatNumber(trainingMax)} kg werkt door in ${routineCount} vaste schema${routineCount === 1 ? '' : "'s"}.` : 'Target opgeslagen.' }
     : { ok: false, message: 'Kon je target niet opslaan.' };
+}
+
+function saveLinkedRoutineExerciseTarget(exercise, card, context) {
+  const trainingMaxInput = card.querySelector('.next-target-tm');
+  const trainingMax = trainingMaxInput && hasInputValue(trainingMaxInput.value) ? Number(trainingMaxInput.value) : '';
+  let routineTarget;
+
+  if (context.target.weightMode === 'percentage') {
+    routineTarget = readPercentageTargetFromCard(card);
+    const validSets = routineTarget.plannedSets.filter(set => hasInputValue(set.reps) && hasInputValue(set.percentage));
+    if (!hasInputValue(trainingMax) || Number(trainingMax) <= 0) {
+      return { ok: false, message: 'Vul een geldige TM in voor dit percentage-target.' };
+    }
+    if (!validSets.length) {
+      return { ok: false, message: 'Vul minstens één target set met reps en een TM-percentage in.' };
+    }
+    routineTarget.plannedSets = validSets;
+  } else {
+    const exerciseTarget = readNextTargetFromCard(card, false);
+    if (!hasExerciseTarget(exerciseTarget)) {
+      return { ok: false, message: 'Vul minstens één target set met reps en gewicht in.' };
+    }
+    routineTarget = normalizeRoutineTargetSnapshot({
+      weightMode: 'fixed',
+      roundingIncrement: context.target.roundingIncrement,
+      plannedSets: buildSetsFromExerciseTarget(exerciseTarget).map(set => ({ reps: set.reps, weight: set.weight, percentage: '' }))
+    });
+  }
+
+  const routines = loadRoutines();
+  const option = (routines[context.link.dayKey] || []).find(entry => entry.id === context.link.optionId);
+  const item = option?.exercises?.find(entry => entry.id === context.link.routineExerciseId);
+  if (!item) return { ok: false, message: 'De gekoppelde vaste oefening bestaat niet meer.' };
+
+  item.weightMode = routineTarget.weightMode;
+  item.roundingIncrement = routineTarget.roundingIncrement;
+  item.plannedSets = routineTarget.plannedSets.map(normalizeRoutinePlannedSet);
+  exercise.routineTargetSnapshot = normalizeRoutineTargetSnapshot(item);
+  if (hasInputValue(trainingMax)) updateExerciseTrainingMax(exercise.name, trainingMax);
+  persistRoutines(routines, { rerenderRoutine: false });
+  persist();
+
+  const routineCount = countRoutineOccurrences(exercise.name);
+  return {
+    ok: true,
+    message: `Target voor ${context.label} opgeslagen.${hasInputValue(trainingMax) ? ` TM ${formatNumber(trainingMax)} kg werkt door in ${routineCount} vaste schema${routineCount === 1 ? '' : "'s"}.` : ''}`
+  };
 }
 
 function countRoutineOccurrences(name) {
@@ -1201,6 +1276,100 @@ function getRoutineSetWeight(item, set, catalog = null) {
 
 function getFilledRoutineSets(item) {
   return (item?.plannedSets || []).filter(set => hasInputValue(set.reps) || (item.weightMode === 'percentage' ? hasInputValue(set.percentage) : hasInputValue(set.weight)));
+}
+
+function resolveExerciseRoutineContext(exercise) {
+  const link = normalizeExerciseRoutineLink(exercise?.routineLink);
+  if (!link) return null;
+  const routines = loadRoutines();
+  const option = (routines[link.dayKey] || []).find(entry => entry.id === link.optionId) || null;
+  const item = option?.exercises?.find(entry => entry.id === link.routineExerciseId) || null;
+  const target = item ? normalizeRoutineTargetSnapshot(item) : normalizeRoutineTargetSnapshot(exercise?.routineTargetSnapshot);
+  if (!target) return null;
+  return {
+    link,
+    option,
+    item,
+    target,
+    label: `${getRoutineDayLabel(link.dayKey)} · ${option?.name || link.optionName || 'Vaste dag'}`
+  };
+}
+
+function routineFixedTargetToExerciseTarget(target) {
+  return normalizeExerciseTarget({
+    mode: 'detailed',
+    splitMode: false,
+    targetSets: (target?.plannedSets || []).map(set => ({ reps: set.reps, weight: set.weight, weightMode: 'single' }))
+  });
+}
+
+function renderExerciseRoutineTarget(card, exercise, context, trainingMax = '') {
+  if (!card) return;
+  const banner = card.querySelector('.routine-target-link-banner');
+  const editor = card.querySelector('.percentage-target-editor');
+  const normalMode = card.querySelector('.next-target-mode');
+  card.classList.toggle('is-routine-percentage-target', context?.target?.weightMode === 'percentage');
+  if (!context) {
+    if (banner) banner.hidden = true;
+    if (editor) editor.hidden = true;
+    if (normalMode) normalMode.hidden = false;
+    return;
+  }
+  if (banner) {
+    banner.hidden = false;
+    banner.innerHTML = `<strong>Gekoppeld aan ${escapeHtml(context.label)}</strong><span>TM geldt voor deze oefening op alle vaste dagen; sets en percentages alleen voor deze routine.</span>`;
+  }
+  const percentageMode = context.target.weightMode === 'percentage';
+  if (normalMode) normalMode.hidden = percentageMode;
+  if (editor) editor.hidden = !percentageMode;
+  if (!percentageMode) return;
+  const tmInput = card.querySelector('.next-target-tm');
+  if (tmInput) tmInput.value = trainingMax ?? '';
+  const rounding = card.querySelector('.percentage-target-rounding');
+  if (rounding) rounding.value = String(context.target.roundingIncrement || 2.5);
+  const container = card.querySelector('.percentage-target-sets');
+  if (!container) return;
+  const sets = context.target.plannedSets || [];
+  container.innerHTML = sets.map((set, index) => percentageTargetSetRowHtml(set, index)).join('') || '<p class="routine-sets-empty">Nog geen percentagesets. Voeg een target set toe.</p>';
+  updatePercentageTargetCalculated(card);
+}
+
+function percentageTargetSetRowHtml(set, index) {
+  return `<div class="percentage-target-set-row" data-set-id="${set.id || uid()}"><span>Set ${index + 1}</span><label><span>Reps</span><input class="percentage-target-reps" type="number" min="0" step="1" value="${set.reps ?? ''}" /></label><label><span>% TM</span><input class="percentage-target-value" type="number" min="0" step="0.25" value="${set.percentage ?? ''}" /></label><div><span>Werkgewicht</span><strong class="percentage-target-weight">-</strong></div><button class="remove-percentage-target-set" type="button" title="Verwijder target set">x</button></div>`;
+}
+
+function updatePercentageTargetCalculated(card) {
+  const tm = Number(card?.querySelector('.next-target-tm')?.value || 0);
+  const increment = Number(card?.querySelector('.percentage-target-rounding')?.value) === 1.25 ? 1.25 : 2.5;
+  card?.querySelectorAll('.percentage-target-set-row').forEach(row => {
+    const percentage = Number(row.querySelector('.percentage-target-value')?.value || 0);
+    const output = row.querySelector('.percentage-target-weight');
+    const weight = tm && percentage ? Math.round(roundRoutineWeight(tm * percentage / 100, increment) * 100) / 100 : '';
+    if (output) output.textContent = weight === '' ? '-' : `${formatNumber(weight)} kg`;
+  });
+}
+
+function readPercentageTargetFromCard(card) {
+  return normalizeRoutineTargetSnapshot({
+    weightMode: 'percentage',
+    roundingIncrement: Number(card.querySelector('.percentage-target-rounding')?.value) === 1.25 ? 1.25 : 2.5,
+    plannedSets: Array.from(card.querySelectorAll('.percentage-target-set-row')).map(row => ({
+      id: row.dataset.setId || uid(),
+      reps: row.querySelector('.percentage-target-reps')?.value ?? '',
+      percentage: row.querySelector('.percentage-target-value')?.value ?? '',
+      weight: ''
+    }))
+  });
+}
+
+function renumberPercentageTargetRows(card) {
+  card?.querySelectorAll('.percentage-target-set-row').forEach((row, index) => {
+    const labels = row.querySelectorAll(':scope > span, :scope > label > span, :scope > div > span');
+    if (labels[0]) labels[0].textContent = `Set ${index + 1}`;
+    if (labels[1]) labels[1].textContent = 'Reps';
+    if (labels[2]) labels[2].textContent = '% TM';
+    if (labels[3]) labels[3].textContent = 'Werkgewicht';
+  });
 }
 
 function hasInputValue(value) {
@@ -1589,8 +1758,13 @@ function renderExercises() {
       exercise.primaryGroup || displayProfile?.primary || '',
       'exercise-secondary'
     );
-    card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(displayProfile?.nextTarget));
-    renderNextTargetInputs(card, displayProfile?.nextTarget || null, displayProfile?.trainingMax ?? '');
+    const routineContext = resolveExerciseRoutineContext(exercise);
+    const targetForDisplay = routineContext?.target?.weightMode === 'fixed'
+      ? routineFixedTargetToExerciseTarget(routineContext.target)
+      : (displayProfile?.nextTarget || null);
+    card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(targetForDisplay));
+    renderNextTargetInputs(card, targetForDisplay, displayProfile?.trainingMax ?? '');
+    renderExerciseRoutineTarget(card, exercise, routineContext, displayProfile?.trainingMax ?? '');
 
     const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
     if (previousSessionEl) {
@@ -2037,10 +2211,24 @@ function addRoutineExercisesToCurrentDay() {
     return;
   }
 
+  let linkedExisting = 0;
+  presets.forEach(item => {
+    const existingExercise = state.exercises.find(exercise => normalizeExerciseName(exercise.name) === normalizeExerciseName(item.name));
+    if (!existingExercise || normalizeExerciseRoutineLink(existingExercise.routineLink)) return;
+    existingExercise.routineLink = {
+      dayKey,
+      optionId: option.id,
+      routineExerciseId: item.id,
+      optionName: option.name || ''
+    };
+    existingExercise.routineTargetSnapshot = normalizeRoutineTargetSnapshot(item);
+    linkedExisting += 1;
+  });
+
   const existing = new Set(state.exercises.map(ex => normalizeExerciseName(ex.name)));
   const toAdd = presets.filter(item => !existing.has(normalizeExerciseName(item.name)));
 
-  if (!toAdd.length) {
+  if (!toAdd.length && !linkedExisting) {
     alert('Alle vaste oefeningen van deze dag staan al in je logboek.');
     return;
   }
@@ -2054,6 +2242,13 @@ function addRoutineExercisesToCurrentDay() {
       rating: '',
       primaryGroup: item.primaryGroup || '',
       secondaryGroups: [...(item.secondaryGroups || [])],
+      routineLink: {
+        dayKey,
+        optionId: option.id,
+        routineExerciseId: item.id,
+        optionName: option.name || ''
+      },
+      routineTargetSnapshot: normalizeRoutineTargetSnapshot(item),
       splitWeightMode: false,
       sets: plannedSets.length
         ? plannedSets.map(set => newSet({ reps: set.reps, weight: getRoutineSetWeight(item, set, catalog), weightMode: 'single' }))
@@ -2067,7 +2262,12 @@ function addRoutineExercisesToCurrentDay() {
   activeExerciseId = state.exercises[state.exercises.length - 1]?.id || activeExerciseId;
   renderExercises();
   persist();
-  flashButtonLabel(addRoutineToDayBtn, `+${toAdd.length} toegevoegd`, 1200);
+  const resultLabel = toAdd.length && linkedExisting
+    ? `+${toAdd.length} toegevoegd · ${linkedExisting} gekoppeld`
+    : toAdd.length
+      ? `+${toAdd.length} toegevoegd`
+      : `${linkedExisting} gekoppeld`;
+  flashButtonLabel(addRoutineToDayBtn, resultLabel, 1400);
 }
 
 function updateExerciseStats(exerciseId, cardEl) {
@@ -2849,6 +3049,15 @@ function handleInputChange(target) {
   const card = target.closest('.exercise-card');
   if (!card) return;
   if (
+    target.classList.contains('percentage-target-reps')
+    || target.classList.contains('percentage-target-value')
+    || target.classList.contains('percentage-target-rounding')
+    || target.classList.contains('next-target-tm')
+  ) {
+    if (card.classList.contains('is-routine-percentage-target')) updatePercentageTargetCalculated(card);
+    return;
+  }
+  if (
     target.classList.contains('quick-set-count')
     || target.classList.contains('quick-set-left-count')
     || target.classList.contains('quick-set-right-count')
@@ -2868,7 +3077,6 @@ function handleInputChange(target) {
     || target.classList.contains('next-target-weight')
     || target.classList.contains('next-target-left-weight')
     || target.classList.contains('next-target-right-weight')
-    || target.classList.contains('next-target-tm')
     || target.classList.contains('next-target-note')
     || target.classList.contains('target-set-reps')
     || target.classList.contains('target-set-left-reps')
@@ -7290,6 +7498,23 @@ exerciseList.addEventListener('click', event => {
     const targetStatus = card.querySelector('.next-target-head .sub');
     if (targetStatus) targetStatus.textContent = result.message;
     flashButtonLabel(event.target, 'Target bewaard', 1100);
+    return;
+  }
+
+  if (event.target.classList.contains('add-percentage-target-set')) {
+    const container = card.querySelector('.percentage-target-sets');
+    if (!container) return;
+    if (!container.querySelector('.percentage-target-set-row')) container.innerHTML = '';
+    container.insertAdjacentHTML('beforeend', percentageTargetSetRowHtml(normalizeRoutinePlannedSet({}), container.querySelectorAll('.percentage-target-set-row').length));
+    renumberPercentageTargetRows(card);
+    updatePercentageTargetCalculated(card);
+    return;
+  }
+
+  if (event.target.classList.contains('remove-percentage-target-set')) {
+    event.target.closest('.percentage-target-set-row')?.remove();
+    renumberPercentageTargetRows(card);
+    updatePercentageTargetCalculated(card);
     return;
   }
 

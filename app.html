@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20261018c" />
+  <link rel="stylesheet" href="styles.css?v=20261022a" />
 </head>
 <body>
   <div class="bg"></div>
@@ -670,6 +670,14 @@
             <button class="ghost small save-next-target" type="button">Bewaar target</button>
           </div>
         </div>
+        <div class="routine-target-link-banner" hidden></div>
+        <section class="percentage-target-editor" hidden>
+          <div class="percentage-target-toolbar">
+            <label class="control"><span>Afronden op</span><select class="percentage-target-rounding"><option value="1.25">1,25 kg</option><option value="2.5">2,5 kg</option></select></label>
+            <button class="ghost small add-percentage-target-set" type="button">+ Target set</button>
+          </div>
+          <div class="percentage-target-sets"></div>
+        </section>
         <div class="next-target-grid">
           <label class="control target-control">
             <span>Training Max (kg)</span>
@@ -823,7 +831,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20261018c"></script>
+  <script src="app.js?v=20261022a"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>
