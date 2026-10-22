@@ -1278,20 +1278,81 @@ function getFilledRoutineSets(item) {
   return (item?.plannedSets || []).filter(set => hasInputValue(set.reps) || (item.weightMode === 'percentage' ? hasInputValue(set.percentage) : hasInputValue(set.weight)));
 }
 
+function getRoutineExerciseCandidates(exercise, routines = loadRoutines()) {
+  const exerciseKey = normalizeExerciseName(exercise?.name);
+  if (!exerciseKey) return [];
+  const actualSets = Array.isArray(exercise?.sets) ? exercise.sets : [];
+  const logDayKey = getRoutineDayKeyFromDate(state.date || todayISO());
+  const selectedDayKey = routineSourceDaySelect?.value || '';
+  const selectedOptionId = routineSourceOptionSelect?.value || '';
+
+  return ROUTINE_DAYS.flatMap(day => (routines[day.key] || []).flatMap(option => (option.exercises || [])
+    .filter(item => normalizeExerciseName(item.name) === exerciseKey)
+    .map(item => {
+      const plannedSets = getFilledRoutineSets(item);
+      let score = 0;
+      if (day.key === logDayKey) score += 40;
+      if (day.key === selectedDayKey) score += 50;
+      if (option.id === selectedOptionId) score += 70;
+      if (plannedSets.length && plannedSets.length === actualSets.length) score += 45;
+      plannedSets.forEach((set, index) => {
+        if (hasInputValue(set.reps) && Number(set.reps) === Number(actualSets[index]?.reps)) score += 3;
+      });
+      return { dayKey: day.key, option, item, score };
+    })));
+}
+
+function setExerciseRoutineContext(exercise, dayKey, option, item) {
+  exercise.routineLink = {
+    dayKey,
+    optionId: option.id,
+    routineExerciseId: item.id,
+    optionName: option.name || ''
+  };
+  exercise.routineTargetSnapshot = normalizeRoutineTargetSnapshot(item);
+}
+
 function resolveExerciseRoutineContext(exercise) {
   const link = normalizeExerciseRoutineLink(exercise?.routineLink);
-  if (!link) return null;
   const routines = loadRoutines();
-  const option = (routines[link.dayKey] || []).find(entry => entry.id === link.optionId) || null;
-  const item = option?.exercises?.find(entry => entry.id === link.routineExerciseId) || null;
+  let option = link
+    ? (routines[link.dayKey] || []).find(entry => entry.id === link.optionId)
+      || (routines[link.dayKey] || []).find(entry => link.optionName && entry.name === link.optionName)
+      || null
+    : null;
+  let item = option?.exercises?.find(entry => entry.id === link?.routineExerciseId) || null;
+
+  // Cloud imports can regenerate routine IDs. Recover the link by its stable
+  // day/option/name data before falling back to the generic exercise target.
+  if (option && (!item || normalizeExerciseName(item.name) !== normalizeExerciseName(exercise?.name))) {
+    item = option.exercises?.find(entry => normalizeExerciseName(entry.name) === normalizeExerciseName(exercise?.name)) || null;
+  }
+
+  let resolvedDayKey = link?.dayKey || '';
+  if (!item) {
+    const candidates = getRoutineExerciseCandidates(exercise, routines).sort((a, b) => b.score - a.score);
+    const best = candidates[0];
+    const second = candidates[1];
+    if (best && best.score >= 40 && (!second || best.score > second.score)) {
+      resolvedDayKey = best.dayKey;
+      option = best.option;
+      item = best.item;
+    }
+  }
+
+  if (item && option && resolvedDayKey) {
+    setExerciseRoutineContext(exercise, resolvedDayKey, option, item);
+  }
+
+  const repairedLink = normalizeExerciseRoutineLink(exercise?.routineLink);
   const target = item ? normalizeRoutineTargetSnapshot(item) : normalizeRoutineTargetSnapshot(exercise?.routineTargetSnapshot);
-  if (!target) return null;
+  if (!target || !(repairedLink || link)) return null;
   return {
-    link,
+    link: repairedLink || link,
     option,
     item,
     target,
-    label: `${getRoutineDayLabel(link.dayKey)} · ${option?.name || link.optionName || 'Vaste dag'}`
+    label: `${getRoutineDayLabel(repairedLink?.dayKey || link?.dayKey)} · ${option?.name || repairedLink?.optionName || link?.optionName || 'Vaste dag'}`
   };
 }
 
@@ -2212,26 +2273,21 @@ function addRoutineExercisesToCurrentDay() {
   }
 
   let linkedExisting = 0;
+  let refreshedExisting = 0;
   presets.forEach(item => {
     const existingExercise = state.exercises.find(exercise => normalizeExerciseName(exercise.name) === normalizeExerciseName(item.name));
-    if (!existingExercise || normalizeExerciseRoutineLink(existingExercise.routineLink)) return;
-    existingExercise.routineLink = {
-      dayKey,
-      optionId: option.id,
-      routineExerciseId: item.id,
-      optionName: option.name || ''
-    };
-    existingExercise.routineTargetSnapshot = normalizeRoutineTargetSnapshot(item);
-    linkedExisting += 1;
+    if (!existingExercise) return;
+    const currentLink = normalizeExerciseRoutineLink(existingExercise.routineLink);
+    const alreadyLinked = currentLink?.dayKey === dayKey
+      && currentLink?.optionId === option.id
+      && currentLink?.routineExerciseId === item.id;
+    setExerciseRoutineContext(existingExercise, dayKey, option, item);
+    refreshedExisting += 1;
+    if (!alreadyLinked) linkedExisting += 1;
   });
 
   const existing = new Set(state.exercises.map(ex => normalizeExerciseName(ex.name)));
   const toAdd = presets.filter(item => !existing.has(normalizeExerciseName(item.name)));
-
-  if (!toAdd.length && !linkedExisting) {
-    alert('Alle vaste oefeningen van deze dag staan al in je logboek.');
-    return;
-  }
 
   toAdd.forEach(item => {
     const plannedSets = getFilledRoutineSets(item);
@@ -2266,7 +2322,9 @@ function addRoutineExercisesToCurrentDay() {
     ? `+${toAdd.length} toegevoegd · ${linkedExisting} gekoppeld`
     : toAdd.length
       ? `+${toAdd.length} toegevoegd`
-      : `${linkedExisting} gekoppeld`;
+      : linkedExisting
+        ? `${linkedExisting} gekoppeld`
+        : `${refreshedExisting} targets bijgewerkt`;
   flashButtonLabel(addRoutineToDayBtn, resultLabel, 1400);
 }
 
