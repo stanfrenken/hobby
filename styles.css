@@ -1008,8 +1008,8 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .percentage-target-set-row strong { min-height:38px; display:flex; align-items:center; }
 .remove-percentage-target-set { width:32px; height:32px; margin-bottom:3px; border:0; border-radius:50%; background:#f2e5e1; color:#8b3f36; font-weight:900; cursor:pointer; }
 .exercise-card.is-routine-percentage-target .next-target-grid .target-control:not(:first-child),
-.exercise-card.is-routine-percentage-target .target-sets-editor,
-.exercise-card.is-routine-percentage-target .next-target-note-control { display:none; }
+.exercise-card.is-routine-percentage-target .target-sets-editor { display:none; }
+.exercise-card.is-routine-percentage-target .next-target-grid { display:grid; grid-template-columns:minmax(180px, 320px); }
 
 .next-target-head {
   display: flex;

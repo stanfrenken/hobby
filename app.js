@@ -274,6 +274,7 @@ function normalizeRoutineExercise(item) {
     id: item?.id || uid(),
     name: String(item?.name || '').trim(),
     notes: String(item?.notes || '').trim(),
+    targetNote: String(item?.targetNote || '').trim(),
     primaryGroup: sanitizeMuscleGroup(item?.primaryGroup) || sanitizeMuscleGroup(item?.primary) || '',
     secondaryGroups: normalizeSecondaryGroups(
       item?.secondaryGroups ?? item?.secondaryGroup ?? item?.secondary,
@@ -311,6 +312,7 @@ function normalizeRoutineTargetSnapshot(target) {
   return {
     weightMode: target.weightMode === 'percentage' ? 'percentage' : 'fixed',
     roundingIncrement: Number(target.roundingIncrement) === 1.25 ? 1.25 : 2.5,
+    note: String(target.targetNote ?? target.note ?? '').trim(),
     plannedSets: Array.isArray(target.plannedSets) ? target.plannedSets.map(normalizeRoutinePlannedSet) : []
   };
 }
@@ -1200,6 +1202,7 @@ function saveExerciseNextTarget(exercise, card) {
 function saveLinkedRoutineExerciseTarget(exercise, card, context) {
   const trainingMaxInput = card.querySelector('.next-target-tm');
   const trainingMax = trainingMaxInput && hasInputValue(trainingMaxInput.value) ? Number(trainingMaxInput.value) : '';
+  const targetNote = String(card.querySelector('.next-target-note')?.value || '').trim();
   let routineTarget;
 
   if (context.target.weightMode === 'percentage') {
@@ -1231,6 +1234,7 @@ function saveLinkedRoutineExerciseTarget(exercise, card, context) {
 
   item.weightMode = routineTarget.weightMode;
   item.roundingIncrement = routineTarget.roundingIncrement;
+  item.targetNote = targetNote;
   item.plannedSets = routineTarget.plannedSets.map(normalizeRoutinePlannedSet);
   exercise.routineTargetSnapshot = normalizeRoutineTargetSnapshot(item);
   if (hasInputValue(trainingMax)) updateExerciseTrainingMax(exercise.name, trainingMax);
@@ -1360,6 +1364,7 @@ function routineFixedTargetToExerciseTarget(target) {
   return normalizeExerciseTarget({
     mode: 'detailed',
     splitMode: false,
+    note: target?.note || '',
     targetSets: (target?.plannedSets || []).map(set => ({ reps: set.reps, weight: set.weight, weightMode: 'single' }))
   });
 }
@@ -1381,11 +1386,14 @@ function renderExerciseRoutineTarget(card, exercise, context, trainingMax = '') 
     banner.innerHTML = `<strong>Gekoppeld aan ${escapeHtml(context.label)}</strong><span>TM geldt voor deze oefening op alle vaste dagen; sets en percentages alleen voor deze routine.</span>`;
   }
   const percentageMode = context.target.weightMode === 'percentage';
+  if (percentageMode) card.classList.remove('is-target-detailed');
   if (normalMode) normalMode.hidden = percentageMode;
   if (editor) editor.hidden = !percentageMode;
   if (!percentageMode) return;
   const tmInput = card.querySelector('.next-target-tm');
   if (tmInput) tmInput.value = trainingMax ?? '';
+  const noteInput = card.querySelector('.next-target-note');
+  if (noteInput) noteInput.value = context.target.note || '';
   const rounding = card.querySelector('.percentage-target-rounding');
   if (rounding) rounding.value = String(context.target.roundingIncrement || 2.5);
   const container = card.querySelector('.percentage-target-sets');
