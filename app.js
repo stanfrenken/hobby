@@ -1349,6 +1349,25 @@ function getFilledRoutineSets(item) {
   return (item?.plannedSets || []).filter(set => hasInputValue(set.reps) || (item.weightMode === 'percentage' ? hasInputValue(set.percentage) : hasInputValue(set.weight)));
 }
 
+function getRoutineTargetSignature(item) {
+  const target = normalizeRoutineTargetSnapshot(item);
+  return JSON.stringify({
+    weightMode: target?.weightMode || 'fixed',
+    roundingIncrement: target?.roundingIncrement || 2.5,
+    note: target?.note || '',
+    plannedSets: (target?.plannedSets || []).map(set => ({
+      reps: String(set.reps ?? ''),
+      weight: String(set.weight ?? ''),
+      percentage: String(set.percentage ?? '')
+    }))
+  });
+}
+
+function routineWeightMatches(actual, expected) {
+  if (!hasInputValue(actual) || !hasInputValue(expected)) return false;
+  return Math.abs(Number(actual) - Number(expected)) < 0.011;
+}
+
 function getRoutineExerciseCandidates(exercise, routines = loadRoutines()) {
   const exerciseKey = normalizeExerciseName(exercise?.name);
   if (!exerciseKey) return [];
@@ -1356,6 +1375,7 @@ function getRoutineExerciseCandidates(exercise, routines = loadRoutines()) {
   const logDayKey = getRoutineDayKeyFromDate(state.date || todayISO());
   const selectedDayKey = routineSourceDaySelect?.value || '';
   const selectedOptionId = routineSourceOptionSelect?.value || '';
+  const catalog = getExerciseCatalog(getCurrentDataSnapshot());
 
   return ROUTINE_DAYS.flatMap(day => (routines[day.key] || []).flatMap(option => (option.exercises || [])
     .filter(item => normalizeExerciseName(item.name) === exerciseKey)
@@ -1367,9 +1387,17 @@ function getRoutineExerciseCandidates(exercise, routines = loadRoutines()) {
       if (option.id === selectedOptionId) score += 70;
       if (plannedSets.length && plannedSets.length === actualSets.length) score += 45;
       plannedSets.forEach((set, index) => {
-        if (hasInputValue(set.reps) && Number(set.reps) === Number(actualSets[index]?.reps)) score += 3;
+        const actualSet = actualSets[index];
+        if (hasInputValue(set.reps) && Number(set.reps) === Number(actualSet?.reps)) score += 3;
+        const expectedWeights = getRoutineSetWeights(item, set, catalog);
+        if (expectedWeights.split) {
+          if (routineWeightMatches(actualSet?.leftWeight, expectedWeights.left)) score += 6;
+          if (routineWeightMatches(actualSet?.rightWeight, expectedWeights.right)) score += 6;
+        } else if (routineWeightMatches(actualSet?.weight, expectedWeights.single)) {
+          score += 8;
+        }
       });
-      return { dayKey: day.key, option, item, score };
+      return { dayKey: day.key, option, item, score, signature: getRoutineTargetSignature(item) };
     })));
 }
 
@@ -1385,6 +1413,7 @@ function setExerciseRoutineContext(exercise, dayKey, option, item) {
 
 function resolveExerciseRoutineContext(exercise) {
   const link = normalizeExerciseRoutineLink(exercise?.routineLink);
+  const storedSnapshot = normalizeRoutineTargetSnapshot(exercise?.routineTargetSnapshot);
   const routines = loadRoutines();
   let option = link
     ? (routines[link.dayKey] || []).find(entry => entry.id === link.optionId)
@@ -1399,12 +1428,46 @@ function resolveExerciseRoutineContext(exercise) {
     item = option.exercises?.find(entry => normalizeExerciseName(entry.name) === normalizeExerciseName(exercise?.name)) || null;
   }
 
+  const itemHasPercentages = item?.plannedSets?.some(set => hasInputValue(set.percentage));
+  const itemHasFixedWeights = item?.plannedSets?.some(set => hasInputValue(set.weight) && Number(set.weight) > 0);
+  if (item && item.weightMode !== 'percentage' && storedSnapshot?.weightMode === 'percentage' && storedSnapshot.plannedSets.some(set => hasInputValue(set.percentage))) {
+    item = {
+      ...item,
+      weightMode: 'percentage',
+      roundingIncrement: storedSnapshot.roundingIncrement,
+      targetNote: storedSnapshot.note,
+      plannedSets: storedSnapshot.plannedSets.map(normalizeRoutinePlannedSet)
+    };
+  } else if (item && item.weightMode !== 'percentage' && itemHasPercentages && !itemHasFixedWeights) {
+    item = { ...item, weightMode: 'percentage' };
+  }
+
   let resolvedDayKey = link?.dayKey || '';
+  if (item && item.weightMode !== 'percentage') {
+    const tmProfile = getExerciseTrainingMaxProfile(exercise?.name);
+    const hasTrainingMax = Number(tmProfile.single) > 0 || (tmProfile.split && Number(tmProfile.left) > 0 && Number(tmProfile.right) > 0);
+    if (hasTrainingMax) {
+      const candidates = getRoutineExerciseCandidates(exercise, routines).sort((a, b) => b.score - a.score);
+      const currentCandidate = candidates.find(candidate => candidate.dayKey === resolvedDayKey
+        && candidate.option.id === option?.id
+        && candidate.item.id === item.id);
+      const percentageCandidate = candidates.find(candidate => candidate.item.weightMode === 'percentage'
+        && (candidate.dayKey === resolvedDayKey || candidate.dayKey === getRoutineDayKeyFromDate(state.date || todayISO())));
+      if (percentageCandidate && percentageCandidate.score >= 85 && percentageCandidate.score > (currentCandidate?.score || 0) + 5) {
+        resolvedDayKey = percentageCandidate.dayKey;
+        option = percentageCandidate.option;
+        item = percentageCandidate.item;
+      }
+    }
+  }
+
   if (!item) {
     const candidates = getRoutineExerciseCandidates(exercise, routines).sort((a, b) => b.score - a.score);
     const best = candidates[0];
     const second = candidates[1];
-    if (best && best.score >= 40 && (!second || best.score > second.score)) {
+    const tiedCandidatesMatch = best && second && best.score === second.score
+      && candidates.filter(candidate => candidate.score === best.score).every(candidate => candidate.signature === best.signature);
+    if (best && best.score >= 40 && (!second || best.score > second.score || tiedCandidatesMatch)) {
       resolvedDayKey = best.dayKey;
       option = best.option;
       item = best.item;
