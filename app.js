@@ -1386,7 +1386,11 @@ function renderExerciseRoutineTarget(card, exercise, context, trainingMax = '') 
     banner.innerHTML = `<strong>Gekoppeld aan ${escapeHtml(context.label)}</strong><span>TM geldt voor deze oefening op alle vaste dagen; sets en percentages alleen voor deze routine.</span>`;
   }
   const percentageMode = context.target.weightMode === 'percentage';
-  if (percentageMode) card.classList.remove('is-target-detailed');
+  if (percentageMode) {
+    card.classList.remove('is-target-detailed');
+    const normalTargetRows = card.querySelector('.target-sets-body');
+    if (normalTargetRows) normalTargetRows.innerHTML = '';
+  }
   if (normalMode) normalMode.hidden = percentageMode;
   if (editor) editor.hidden = !percentageMode;
   if (!percentageMode) return;
@@ -1828,8 +1832,10 @@ function renderExercises() {
       'exercise-secondary'
     );
     const routineContext = resolveExerciseRoutineContext(exercise);
-    const targetForDisplay = routineContext?.target?.weightMode === 'fixed'
-      ? routineFixedTargetToExerciseTarget(routineContext.target)
+    const targetForDisplay = routineContext
+      ? (routineContext.target.weightMode === 'fixed'
+        ? routineFixedTargetToExerciseTarget(routineContext.target)
+        : null)
       : (displayProfile?.nextTarget || null);
     card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(targetForDisplay));
     renderNextTargetInputs(card, targetForDisplay, displayProfile?.trainingMax ?? '');
