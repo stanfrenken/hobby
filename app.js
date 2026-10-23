@@ -407,7 +407,10 @@ function loadCustomExerciseLibrary() {
         primary: item?.primary,
         secondaryGroups: item?.secondaryGroups ?? item?.secondary,
         nextTarget: item?.nextTarget,
-        trainingMax: item?.trainingMax
+        trainingMax: item?.trainingMax,
+        splitTrainingMax: item?.splitTrainingMax,
+        leftTrainingMax: item?.leftTrainingMax,
+        rightTrainingMax: item?.rightTrainingMax
       }))
       .filter(item => item.name);
   } catch {
@@ -1144,6 +1147,9 @@ function saveExerciseProfileToLibrary(exercise) {
     profile.nextTarget = normalizeExerciseTarget(existing.nextTarget);
   }
   if (hasInputValue(existing?.trainingMax)) profile.trainingMax = existing.trainingMax;
+  profile.splitTrainingMax = !!existing?.splitTrainingMax;
+  profile.leftTrainingMax = existing?.leftTrainingMax ?? '';
+  profile.rightTrainingMax = existing?.rightTrainingMax ?? '';
   const library = currentLibrary.filter(item => normalizeExerciseName(item.name) !== key);
 
   library.push(profile);
@@ -1200,16 +1206,18 @@ function saveExerciseNextTarget(exercise, card) {
 }
 
 function saveLinkedRoutineExerciseTarget(exercise, card, context) {
-  const trainingMaxInput = card.querySelector('.next-target-tm');
-  const trainingMax = trainingMaxInput && hasInputValue(trainingMaxInput.value) ? Number(trainingMaxInput.value) : '';
+  const trainingMaxes = readTrainingMaxesFromCard(card);
   const targetNote = String(card.querySelector('.next-target-note')?.value || '').trim();
   let routineTarget;
 
   if (context.target.weightMode === 'percentage') {
     routineTarget = readPercentageTargetFromCard(card);
     const validSets = routineTarget.plannedSets.filter(set => hasInputValue(set.reps) && hasInputValue(set.percentage));
-    if (!hasInputValue(trainingMax) || Number(trainingMax) <= 0) {
-      return { ok: false, message: 'Vul een geldige TM in voor dit percentage-target.' };
+    const validTrainingMax = trainingMaxes.split
+      ? Number(trainingMaxes.left) > 0 && Number(trainingMaxes.right) > 0
+      : Number(trainingMaxes.single) > 0;
+    if (!validTrainingMax) {
+      return { ok: false, message: trainingMaxes.split ? 'Vul een geldige linker én rechter TM in.' : 'Vul een geldige TM in voor dit percentage-target.' };
     }
     if (!validSets.length) {
       return { ok: false, message: 'Vul minstens één target set met reps en een TM-percentage in.' };
@@ -1237,14 +1245,17 @@ function saveLinkedRoutineExerciseTarget(exercise, card, context) {
   item.targetNote = targetNote;
   item.plannedSets = routineTarget.plannedSets.map(normalizeRoutinePlannedSet);
   exercise.routineTargetSnapshot = normalizeRoutineTargetSnapshot(item);
-  if (hasInputValue(trainingMax)) updateExerciseTrainingMax(exercise.name, trainingMax);
+  if (context.target.weightMode === 'percentage') updateExerciseTrainingMax(exercise.name, trainingMaxes);
   persistRoutines(routines, { rerenderRoutine: false });
   persist();
 
   const routineCount = countRoutineOccurrences(exercise.name);
+  const tmLabel = trainingMaxes.split
+    ? `TM links ${formatNumber(trainingMaxes.left)} kg en rechts ${formatNumber(trainingMaxes.right)} kg`
+    : `TM ${formatNumber(trainingMaxes.single)} kg`;
   return {
     ok: true,
-    message: `Target voor ${context.label} opgeslagen.${hasInputValue(trainingMax) ? ` TM ${formatNumber(trainingMax)} kg werkt door in ${routineCount} vaste schema${routineCount === 1 ? '' : "'s"}.` : ''}`
+    message: `Target voor ${context.label} opgeslagen.${context.target.weightMode === 'percentage' ? ` ${tmLabel} werkt door in ${routineCount} vaste schema${routineCount === 1 ? '' : "'s"}.` : ''}`
   };
 }
 
@@ -1253,16 +1264,46 @@ function countRoutineOccurrences(name) {
   return Object.values(loadRoutines()).flat().reduce((count, option) => count + (option.exercises || []).filter(item => normalizeExerciseName(item.name) === key).length, 0);
 }
 
+function readTrainingMaxesFromCard(card) {
+  const split = !!card?.querySelector('.next-target-split-tm')?.checked;
+  return {
+    split,
+    single: card?.querySelector('.next-target-tm')?.value ?? '',
+    left: card?.querySelector('.next-target-left-tm')?.value ?? '',
+    right: card?.querySelector('.next-target-right-tm')?.value ?? ''
+  };
+}
+
 function updateExerciseTrainingMax(name, value) {
   const cleanName = String(name || '').trim();
   if (!cleanName) return false;
   const catalog = getExerciseCatalog(getCurrentDataSnapshot());
   const current = getAutoExerciseProfile(cleanName, catalog) || normalizeExerciseProfile({ name: cleanName, primary: 'Overig' });
-  return upsertExerciseLibraryProfile({ ...current, name: cleanName, trainingMax: hasInputValue(value) ? Number(value) : '' });
+  const settings = value && typeof value === 'object'
+    ? value
+    : { split: false, single: value, left: current.leftTrainingMax, right: current.rightTrainingMax };
+  return upsertExerciseLibraryProfile({
+    ...current,
+    name: cleanName,
+    trainingMax: hasInputValue(settings.single) ? Number(settings.single) : current.trainingMax,
+    splitTrainingMax: !!settings.split,
+    leftTrainingMax: hasInputValue(settings.left) ? Number(settings.left) : current.leftTrainingMax,
+    rightTrainingMax: hasInputValue(settings.right) ? Number(settings.right) : current.rightTrainingMax
+  });
 }
 
 function getExerciseTrainingMax(name, catalog = null) {
   return getAutoExerciseProfile(name, catalog || getExerciseCatalog(getCurrentDataSnapshot()))?.trainingMax ?? '';
+}
+
+function getExerciseTrainingMaxProfile(name, catalog = null) {
+  const profile = getAutoExerciseProfile(name, catalog || getExerciseCatalog(getCurrentDataSnapshot()));
+  return {
+    split: !!profile?.splitTrainingMax,
+    single: profile?.trainingMax ?? '',
+    left: profile?.leftTrainingMax ?? '',
+    right: profile?.rightTrainingMax ?? ''
+  };
 }
 
 function roundRoutineWeight(value, increment) {
@@ -1270,12 +1311,38 @@ function roundRoutineWeight(value, increment) {
   return Math.round((Number(value) || 0) / step) * step;
 }
 
-function getRoutineSetWeight(item, set, catalog = null) {
-  if (item?.weightMode !== 'percentage') return set?.weight ?? '';
-  const tm = Number(getExerciseTrainingMax(item.name, catalog));
+function calculateRoutinePercentageWeight(tm, percentage, increment) {
+  if (!Number(tm) || !Number(percentage)) return '';
+  return Math.round(roundRoutineWeight(Number(tm) * Number(percentage) / 100, increment) * 100) / 100;
+}
+
+function getRoutineSetWeights(item, set, catalog = null) {
+  if (item?.weightMode !== 'percentage') return { split: false, single: set?.weight ?? '', left: '', right: '' };
+  const profile = getExerciseTrainingMaxProfile(item.name, catalog);
   const percentage = Number(set?.percentage);
-  if (!tm || !percentage) return '';
-  return Math.round(roundRoutineWeight(tm * percentage / 100, item.roundingIncrement) * 100) / 100;
+  if (profile.split) {
+    return {
+      split: true,
+      single: '',
+      left: calculateRoutinePercentageWeight(profile.left, percentage, item.roundingIncrement),
+      right: calculateRoutinePercentageWeight(profile.right, percentage, item.roundingIncrement)
+    };
+  }
+  return {
+    split: false,
+    single: calculateRoutinePercentageWeight(profile.single, percentage, item.roundingIncrement),
+    left: '',
+    right: ''
+  };
+}
+
+function formatRoutineSetWeights(item, set, catalog = null) {
+  const weights = getRoutineSetWeights(item, set, catalog);
+  if (weights.split) {
+    if (!hasInputValue(weights.left) && !hasInputValue(weights.right)) return '-';
+    return `L ${hasInputValue(weights.left) ? `${formatNumber(weights.left)} kg` : '-'} · R ${hasInputValue(weights.right) ? `${formatNumber(weights.right)} kg` : '-'}`;
+  }
+  return hasInputValue(weights.single) ? `${formatNumber(weights.single)} kg` : '-';
 }
 
 function getFilledRoutineSets(item) {
@@ -1369,13 +1436,14 @@ function routineFixedTargetToExerciseTarget(target) {
   });
 }
 
-function renderExerciseRoutineTarget(card, exercise, context, trainingMax = '') {
+function renderExerciseRoutineTarget(card, exercise, context, profile = null) {
   if (!card) return;
   const banner = card.querySelector('.routine-target-link-banner');
   const editor = card.querySelector('.percentage-target-editor');
   const normalMode = card.querySelector('.next-target-mode');
   card.classList.toggle('is-routine-percentage-target', context?.target?.weightMode === 'percentage');
   if (!context) {
+    card.classList.remove('is-split-tm');
     if (banner) banner.hidden = true;
     if (editor) editor.hidden = true;
     if (normalMode) normalMode.hidden = false;
@@ -1394,8 +1462,16 @@ function renderExerciseRoutineTarget(card, exercise, context, trainingMax = '') 
   if (normalMode) normalMode.hidden = percentageMode;
   if (editor) editor.hidden = !percentageMode;
   if (!percentageMode) return;
+  const splitTrainingMax = !!profile?.splitTrainingMax;
+  card.classList.toggle('is-split-tm', splitTrainingMax);
+  const splitToggle = card.querySelector('.next-target-split-tm');
+  if (splitToggle) splitToggle.checked = splitTrainingMax;
   const tmInput = card.querySelector('.next-target-tm');
-  if (tmInput) tmInput.value = trainingMax ?? '';
+  if (tmInput) tmInput.value = profile?.trainingMax ?? '';
+  const leftTmInput = card.querySelector('.next-target-left-tm');
+  if (leftTmInput) leftTmInput.value = profile?.leftTrainingMax ?? '';
+  const rightTmInput = card.querySelector('.next-target-right-tm');
+  if (rightTmInput) rightTmInput.value = profile?.rightTrainingMax ?? '';
   const noteInput = card.querySelector('.next-target-note');
   if (noteInput) noteInput.value = context.target.note || '';
   const rounding = card.querySelector('.percentage-target-rounding');
@@ -1412,13 +1488,22 @@ function percentageTargetSetRowHtml(set, index) {
 }
 
 function updatePercentageTargetCalculated(card) {
-  const tm = Number(card?.querySelector('.next-target-tm')?.value || 0);
+  const trainingMaxes = readTrainingMaxesFromCard(card);
   const increment = Number(card?.querySelector('.percentage-target-rounding')?.value) === 1.25 ? 1.25 : 2.5;
   card?.querySelectorAll('.percentage-target-set-row').forEach(row => {
     const percentage = Number(row.querySelector('.percentage-target-value')?.value || 0);
     const output = row.querySelector('.percentage-target-weight');
-    const weight = tm && percentage ? Math.round(roundRoutineWeight(tm * percentage / 100, increment) * 100) / 100 : '';
-    if (output) output.textContent = weight === '' ? '-' : `${formatNumber(weight)} kg`;
+    if (!output) return;
+    if (trainingMaxes.split) {
+      const left = calculateRoutinePercentageWeight(trainingMaxes.left, percentage, increment);
+      const right = calculateRoutinePercentageWeight(trainingMaxes.right, percentage, increment);
+      output.textContent = !hasInputValue(left) && !hasInputValue(right)
+        ? '-'
+        : `L ${hasInputValue(left) ? `${formatNumber(left)} kg` : '-'} · R ${hasInputValue(right) ? `${formatNumber(right)} kg` : '-'}`;
+      return;
+    }
+    const weight = calculateRoutinePercentageWeight(trainingMaxes.single, percentage, increment);
+    output.textContent = hasInputValue(weight) ? `${formatNumber(weight)} kg` : '-';
   });
 }
 
@@ -1839,7 +1924,7 @@ function renderExercises() {
       : (displayProfile?.nextTarget || null);
     card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(targetForDisplay));
     renderNextTargetInputs(card, targetForDisplay, displayProfile?.trainingMax ?? '');
-    renderExerciseRoutineTarget(card, exercise, routineContext, displayProfile?.trainingMax ?? '');
+    renderExerciseRoutineTarget(card, exercise, routineContext, displayProfile);
 
     const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
     if (previousSessionEl) {
@@ -1927,8 +2012,9 @@ function renderRoutinePlannedSets(card, item, catalog = null) {
   if (tmInput) tmInput.value = getExerciseTrainingMax(item.name, catalog) ?? '';
   if (!container) return;
   const setRows = (item.plannedSets || []).map((set, index) => {
-    const calculated = getRoutineSetWeight(item, set, catalog);
+    const calculated = formatRoutineSetWeights(item, set, catalog);
     return `<div class="routine-set-row" data-set-id="${set.id}"><span class="routine-set-index">Set ${index + 1}</span><label><span>Reps voor set ${index + 1}</span><input class="routine-set-reps" type="number" min="0" step="1" value="${set.reps ?? ''}" /></label><label class="routine-fixed-weight"><span>Gewicht set ${index + 1}</span><input class="routine-set-weight" type="number" min="0" step="0.25" value="${set.weight ?? ''}" /></label><label class="routine-percentage"><span>% TM set ${index + 1}</span><input class="routine-set-percentage" type="number" min="0" step="0.25" value="${set.percentage ?? ''}" /></label><div class="routine-calculated"><span>Werkgewicht set ${index + 1}</span><strong>${calculated === '' ? '-' : `${formatNumber(calculated)} kg`}</strong></div><button class="remove-routine-set" type="button" title="Verwijder set">x</button></div>`;
+    return `<div class="routine-set-row" data-set-id="${set.id}"><span class="routine-set-index">Set ${index + 1}</span><label><span>Reps voor set ${index + 1}</span><input class="routine-set-reps" type="number" min="0" step="1" value="${set.reps ?? ''}" /></label><label class="routine-fixed-weight"><span>Gewicht set ${index + 1}</span><input class="routine-set-weight" type="number" min="0" step="0.25" value="${set.weight ?? ''}" /></label><label class="routine-percentage"><span>% TM set ${index + 1}</span><input class="routine-set-percentage" type="number" min="0" step="0.25" value="${set.percentage ?? ''}" /></label><div class="routine-calculated"><span>Werkgewicht set ${index + 1}</span><strong>${calculated}</strong></div><button class="remove-routine-set" type="button" title="Verwijder set">x</button></div>`;
   }).join('');
   container.innerHTML = setRows
     ? `<div class="routine-set-list-head"><div><strong>Setplanning</strong><span>Iedere set is afzonderlijk aanpasbaar.</span></div><span>${item.plannedSets.length} set${item.plannedSets.length === 1 ? '' : 's'}</span></div>${setRows}`
@@ -1951,8 +2037,7 @@ function updateRoutinePlanCalculated(card, item, catalog = null) {
     const set = item.plannedSets.find(entry => entry.id === row.dataset.setId);
     const output = row.querySelector('.routine-calculated strong');
     if (!set || !output) return;
-    const value = getRoutineSetWeight(item, set, catalog);
-    output.textContent = value === '' ? '-' : `${formatNumber(value)} kg`;
+    output.textContent = formatRoutineSetWeights(item, set, catalog);
   });
 }
 
@@ -2265,8 +2350,7 @@ function handleRoutineInputChange(target) {
       if (target.classList.contains('routine-set-weight')) set.weight = target.value;
       if (target.classList.contains('routine-set-percentage')) set.percentage = target.value;
       const calculated = setRow.querySelector('.routine-calculated strong');
-      const value = getRoutineSetWeight(item, set, catalog);
-      if (calculated) calculated.textContent = value === '' ? '-' : `${formatNumber(value)} kg`;
+      if (calculated) calculated.textContent = formatRoutineSetWeights(item, set, catalog);
     }
   }
 
@@ -2305,6 +2389,8 @@ function addRoutineExercisesToCurrentDay() {
 
   toAdd.forEach(item => {
     const plannedSets = getFilledRoutineSets(item);
+    const tmProfile = getExerciseTrainingMaxProfile(item.name, catalog);
+    const usesSplitTm = item.weightMode === 'percentage' && tmProfile.split;
     const exercise = {
       id: uid(),
       name: item.name,
@@ -2319,9 +2405,21 @@ function addRoutineExercisesToCurrentDay() {
         optionName: option.name || ''
       },
       routineTargetSnapshot: normalizeRoutineTargetSnapshot(item),
-      splitWeightMode: false,
+      splitWeightMode: usesSplitTm,
       sets: plannedSets.length
-        ? plannedSets.map(set => newSet({ reps: set.reps, weight: getRoutineSetWeight(item, set, catalog), weightMode: 'single' }))
+        ? plannedSets.map(set => {
+          const weights = getRoutineSetWeights(item, set, catalog);
+          return newSet(usesSplitTm
+            ? {
+              reps: set.reps,
+              leftReps: set.reps,
+              rightReps: set.reps,
+              leftWeight: weights.left,
+              rightWeight: weights.right,
+              weightMode: 'split'
+            }
+            : { reps: set.reps, weight: weights.single, weightMode: 'single' });
+        })
         : [newSet()]
     };
     const profile = getAutoExerciseProfile(item.name, catalog);
@@ -3125,8 +3223,23 @@ function handleInputChange(target) {
     || target.classList.contains('percentage-target-value')
     || target.classList.contains('percentage-target-rounding')
     || target.classList.contains('next-target-tm')
+    || target.classList.contains('next-target-split-tm')
+    || target.classList.contains('next-target-left-tm')
+    || target.classList.contains('next-target-right-tm')
   ) {
-    if (card.classList.contains('is-routine-percentage-target')) updatePercentageTargetCalculated(card);
+    if (card.classList.contains('is-routine-percentage-target')) {
+      if (target.classList.contains('next-target-split-tm')) {
+        card.classList.toggle('is-split-tm', !!target.checked);
+        if (target.checked) {
+          const singleValue = card.querySelector('.next-target-tm')?.value || '';
+          const leftInput = card.querySelector('.next-target-left-tm');
+          const rightInput = card.querySelector('.next-target-right-tm');
+          if (leftInput && !hasInputValue(leftInput.value)) leftInput.value = singleValue;
+          if (rightInput && !hasInputValue(rightInput.value)) rightInput.value = singleValue;
+        }
+      }
+      updatePercentageTargetCalculated(card);
+    }
     return;
   }
   if (
@@ -3650,7 +3763,10 @@ function normalizeExerciseProfile(profile) {
     secondaryGroups,
     secondary: secondaryGroups[0] || '',
     nextTarget: normalizeExerciseTarget(profile?.nextTarget),
-    trainingMax: hasInputValue(profile?.trainingMax) && Number.isFinite(Number(profile.trainingMax)) ? Number(profile.trainingMax) : ''
+    trainingMax: hasInputValue(profile?.trainingMax) && Number.isFinite(Number(profile.trainingMax)) ? Number(profile.trainingMax) : '',
+    splitTrainingMax: !!profile?.splitTrainingMax,
+    leftTrainingMax: hasInputValue(profile?.leftTrainingMax) && Number.isFinite(Number(profile.leftTrainingMax)) ? Number(profile.leftTrainingMax) : '',
+    rightTrainingMax: hasInputValue(profile?.rightTrainingMax) && Number.isFinite(Number(profile.rightTrainingMax)) ? Number(profile.rightTrainingMax) : ''
   };
 }
 
@@ -3714,6 +3830,11 @@ function mergeExerciseProfiles(current, incoming) {
   }
   if (!hasInputValue(base.trainingMax) && current && hasInputValue(current.trainingMax)) {
     merged.trainingMax = current.trainingMax;
+  }
+  if (current?.splitTrainingMax && !base.splitTrainingMax) {
+    merged.splitTrainingMax = true;
+    merged.leftTrainingMax = current.leftTrainingMax;
+    merged.rightTrainingMax = current.rightTrainingMax;
   }
   return merged;
 }

@@ -1009,8 +1009,13 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .remove-percentage-target-set { width:32px; height:32px; margin-bottom:3px; border:0; border-radius:50%; background:#f2e5e1; color:#8b3f36; font-weight:900; cursor:pointer; }
 .exercise-card.is-routine-percentage-target .next-target-grid .target-control:not(:first-child),
 .exercise-card.is-routine-percentage-target .target-sets-editor { display:none !important; }
-.exercise-card.is-routine-percentage-target .next-target-grid { display:grid !important; grid-template-columns:minmax(180px, 320px); }
+.exercise-card.is-routine-percentage-target .next-target-grid { display:grid !important; grid-template-columns:repeat(2, minmax(180px, 320px)); align-items:end; }
 .exercise-card.is-routine-percentage-target .next-target-grid .target-control:first-child { display:grid; }
+.target-tm-split-toggle,.target-tm-left,.target-tm-right { display:none; }
+.exercise-card.is-routine-percentage-target .next-target-grid .target-control.target-tm-split-toggle { display:flex !important; min-height:44px; align-items:center; }
+.exercise-card.is-routine-percentage-target.is-split-tm .next-target-grid .target-control:first-child { display:none; }
+.exercise-card.is-routine-percentage-target.is-split-tm .next-target-grid .target-control.target-tm-left,
+.exercise-card.is-routine-percentage-target.is-split-tm .next-target-grid .target-control.target-tm-right { display:grid !important; }
 
 .next-target-head {
   display: flex;
@@ -1777,6 +1782,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
   .next-target-head { grid-template-columns: 1fr; display: grid; }
   .next-target-actions { justify-content: stretch; }
   .next-target-grid { grid-template-columns: 1fr 1fr; }
+  .exercise-card.is-routine-percentage-target .next-target-grid { grid-template-columns:1fr !important; min-width:0 !important; }
   .percentage-target-toolbar { display:grid; grid-template-columns:1fr; }
   .percentage-target-set-row { grid-template-columns:52px 1fr 1fr 32px; }
   .percentage-target-set-row > div { grid-column:2/4; }
