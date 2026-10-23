@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20261023f" />
+  <link rel="stylesheet" href="styles.css?v=20261023g" />
 </head>
 <body>
   <div class="bg"></div>
@@ -158,20 +158,24 @@
         <div class="dashboard-grid">
           <section class="panel dashboard-toolbar">
             <div class="dashboard-week-nav">
-              <button id="dashboardWeekPrev" class="ghost week-arrow" type="button" aria-label="Vorige week">&#8249;</button>
-              <label class="control compact-control">
-                <span>Week kiezen</span>
+              <label class="control compact-control dashboard-period-select">
+                <span>Periode</span>
+                <select id="dashboardPeriod"><option value="week">Week</option><option value="month">Maand</option><option value="year">Jaar</option><option value="all">Alles</option></select>
+              </label>
+              <button id="dashboardWeekPrev" class="ghost week-arrow" type="button" aria-label="Vorige periode">&#8249;</button>
+              <label id="dashboardPeriodControl" class="control compact-control">
+                <span id="dashboardPeriodInputLabel">Week kiezen</span>
                 <input id="dashboardWeek" type="week" />
               </label>
-              <button id="dashboardWeekNow" class="ghost" type="button">Deze week</button>
-              <button id="dashboardWeekNext" class="ghost week-arrow" type="button" aria-label="Volgende week">&#8250;</button>
-              <button id="exportDashboardWeekBtn" class="primary small" type="button">Download weekrapport</button>
+              <button id="dashboardWeekNext" class="ghost week-arrow" type="button" aria-label="Volgende periode">&#8250;</button>
+              <button id="dashboardWeekNow" class="ghost" type="button">Huidige periode</button>
+              <button id="exportDashboardWeekBtn" class="primary small" type="button">Download rapport</button>
             </div>
             <p id="dashboardWeekLabel" class="dashboard-week-label">Weekoverzicht wordt geladen.</p>
           </section>
 
           <section class="panel panel-wide dashboard-hero">
-            <div class="dashboard-section-heading"><div><span class="eyebrow">Weekrapport</span><h2>In één oogopslag</h2></div></div>
+            <div class="dashboard-section-heading"><div><span class="eyebrow">Perioderapport</span><h2>In één oogopslag</h2></div></div>
             <div id="dashboardWeekKpis" class="dashboard-kpis"></div>
           </section>
 
@@ -181,7 +185,7 @@
           </section>
 
           <section class="panel panel-wide dashboard-report-section">
-            <div class="dashboard-section-heading"><div><span class="eyebrow">Alles bij elkaar</span><h2>Oefeningen deze week</h2></div><button id="exportWeekExercisesBtn" class="ghost small" type="button">Excel</button></div>
+            <div class="dashboard-section-heading"><div><span class="eyebrow">Alles bij elkaar</span><h2>Oefeningen in deze periode</h2></div><button id="exportWeekExercisesBtn" class="ghost small" type="button">Excel</button></div>
             <div id="dashboardWeekExercises" class="weekly-report-list"></div>
           </section>
 
@@ -200,7 +204,7 @@
                 <div id="weightWeeklyReadout" class="chart-readout">Beweeg over de lijn voor details.</div>
               </article>
               <article class="health-chart-card">
-                <div class="health-chart-head"><div><strong>Voeding deze week</strong><span>Calorieën als balk, eiwit als lijn.</span></div></div>
+                <div class="health-chart-head"><div><strong>Voeding in deze periode</strong><span>Calorieën als balk, eiwit als lijn.</span></div></div>
                 <canvas id="nutritionWeekChart" width="720" height="260"></canvas>
                 <div id="nutritionWeekReadout" class="chart-readout">Beweeg over een dag voor alle macro's.</div>
               </article>
@@ -893,7 +897,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20261023f"></script>
+  <script src="app.js?v=20261023g"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>
