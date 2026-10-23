@@ -1368,6 +1368,41 @@ function routineWeightMatches(actual, expected) {
   return Math.abs(Number(actual) - Number(expected)) < 0.011;
 }
 
+function inferRoutinePercentage(weight, trainingMax) {
+  if (!Number(weight) || !Number(trainingMax)) return '';
+  return Math.round((Number(weight) / Number(trainingMax) * 100) * 4) / 4;
+}
+
+function convertRoutineTargetToPercentage(item, exercise, trainingMaxes) {
+  if (!item) return null;
+  const sourceSets = item.plannedSets?.length ? item.plannedSets : (exercise?.sets || []);
+  const plannedSets = sourceSets.map((set, index) => {
+    const actualSet = exercise?.sets?.[index] || {};
+    let percentage = set?.percentage ?? '';
+    if (!hasInputValue(percentage)) {
+      if (trainingMaxes.split) {
+        const leftWeight = hasInputValue(set?.leftWeight) ? set.leftWeight : actualSet.leftWeight;
+        const rightWeight = hasInputValue(set?.rightWeight) ? set.rightWeight : actualSet.rightWeight;
+        const left = inferRoutinePercentage(leftWeight, trainingMaxes.left);
+        const right = inferRoutinePercentage(rightWeight, trainingMaxes.right);
+        const sides = [left, right].filter(hasInputValue).map(Number);
+        percentage = sides.length ? Math.round((sides.reduce((sum, value) => sum + value, 0) / sides.length) * 4) / 4 : '';
+      } else {
+        const weight = hasInputValue(set?.weight) ? set.weight : actualSet.weight;
+        percentage = inferRoutinePercentage(weight, trainingMaxes.single);
+      }
+    }
+    return normalizeRoutinePlannedSet({
+      id: set?.id,
+      reps: set?.reps ?? actualSet.reps ?? '',
+      percentage,
+      weight: ''
+    });
+  }).filter(set => hasInputValue(set.reps) || hasInputValue(set.percentage));
+  if (!plannedSets.some(set => hasInputValue(set.percentage))) return null;
+  return { ...item, weightMode: 'percentage', plannedSets };
+}
+
 function getRoutineExerciseCandidates(exercise, routines = loadRoutines()) {
   const exerciseKey = normalizeExerciseName(exercise?.name);
   if (!exerciseKey) return [];
@@ -1447,11 +1482,21 @@ function resolveExerciseRoutineContext(exercise) {
     const tmProfile = getExerciseTrainingMaxProfile(exercise?.name);
     const hasTrainingMax = Number(tmProfile.single) > 0 || (tmProfile.split && Number(tmProfile.left) > 0 && Number(tmProfile.right) > 0);
     if (hasTrainingMax) {
+      const exerciseKey = normalizeExerciseName(exercise?.name);
+      const hasPercentageRoutine = Object.values(routines).flat().some(routineOption => (routineOption.exercises || []).some(routineItem =>
+        normalizeExerciseName(routineItem.name) === exerciseKey
+        && routineItem.weightMode === 'percentage'
+        && getFilledRoutineSets(routineItem).some(set => hasInputValue(set.percentage))));
+      if (hasPercentageRoutine) {
+        item = convertRoutineTargetToPercentage(item, exercise, tmProfile) || item;
+      }
+
       const candidates = getRoutineExerciseCandidates(exercise, routines).sort((a, b) => b.score - a.score);
       const currentCandidate = candidates.find(candidate => candidate.dayKey === resolvedDayKey
         && candidate.option.id === option?.id
         && candidate.item.id === item.id);
       const percentageCandidate = candidates.find(candidate => candidate.item.weightMode === 'percentage'
+        && getFilledRoutineSets(candidate.item).some(set => hasInputValue(set.percentage))
         && (candidate.dayKey === resolvedDayKey || candidate.dayKey === getRoutineDayKeyFromDate(state.date || todayISO())));
       if (percentageCandidate && percentageCandidate.score >= 85 && percentageCandidate.score > (currentCandidate?.score || 0) + 5) {
         resolvedDayKey = percentageCandidate.dayKey;
@@ -2070,9 +2115,17 @@ function renderRoutinePlannedSets(card, item, catalog = null) {
   const modeInput = card.querySelector('.routine-weight-mode');
   const roundingInput = card.querySelector('.routine-rounding');
   const tmInput = card.querySelector('.routine-training-max');
+  const splitTmInput = card.querySelector('.routine-split-tm');
+  const leftTmInput = card.querySelector('.routine-left-training-max');
+  const rightTmInput = card.querySelector('.routine-right-training-max');
+  const tmProfile = getExerciseTrainingMaxProfile(item.name, catalog);
   if (modeInput) modeInput.value = mode;
   if (roundingInput) roundingInput.value = String(item.roundingIncrement || 2.5);
-  if (tmInput) tmInput.value = getExerciseTrainingMax(item.name, catalog) ?? '';
+  card.classList.toggle('is-split-tm', mode === 'percentage' && tmProfile.split);
+  if (tmInput) tmInput.value = tmProfile.single ?? '';
+  if (splitTmInput) splitTmInput.checked = tmProfile.split;
+  if (leftTmInput) leftTmInput.value = tmProfile.left ?? '';
+  if (rightTmInput) rightTmInput.value = tmProfile.right ?? '';
   if (!container) return;
   const setRows = (item.plannedSets || []).map((set, index) => {
     const calculated = formatRoutineSetWeights(item, set, catalog);
@@ -2391,15 +2444,41 @@ function handleRoutineInputChange(target) {
     renderRoutinePlannedSets(card, item, catalog);
   }
 
-  if (target.classList.contains('routine-training-max')) {
-    updateExerciseTrainingMax(item.name, target.value);
+  if (target.classList.contains('routine-training-max')
+    || target.classList.contains('routine-split-tm')
+    || target.classList.contains('routine-left-training-max')
+    || target.classList.contains('routine-right-training-max')) {
+    if (target.classList.contains('routine-split-tm')) {
+      card.classList.toggle('is-split-tm', !!target.checked);
+      if (target.checked) {
+        const singleValue = card.querySelector('.routine-training-max')?.value || '';
+        const leftInput = card.querySelector('.routine-left-training-max');
+        const rightInput = card.querySelector('.routine-right-training-max');
+        if (leftInput && !hasInputValue(leftInput.value)) leftInput.value = singleValue;
+        if (rightInput && !hasInputValue(rightInput.value)) rightInput.value = singleValue;
+      }
+    }
+    updateExerciseTrainingMax(item.name, {
+      split: !!card.querySelector('.routine-split-tm')?.checked,
+      single: card.querySelector('.routine-training-max')?.value ?? '',
+      left: card.querySelector('.routine-left-training-max')?.value ?? '',
+      right: card.querySelector('.routine-right-training-max')?.value ?? ''
+    });
     const freshCatalog = getExerciseCatalog(getCurrentDataSnapshot());
     const key = normalizeExerciseName(item.name);
     routineList?.querySelectorAll('.routine-card').forEach(otherCard => {
       const otherItem = option.exercises.find(entry => entry.id === otherCard.dataset.id);
       if (otherItem && normalizeExerciseName(otherItem.name) === key) {
+        const freshProfile = getExerciseTrainingMaxProfile(otherItem.name, freshCatalog);
+        otherCard.classList.toggle('is-split-tm', freshProfile.split);
         const field = otherCard.querySelector('.routine-training-max');
-        if (field && field !== target) field.value = target.value;
+        const splitField = otherCard.querySelector('.routine-split-tm');
+        const leftField = otherCard.querySelector('.routine-left-training-max');
+        const rightField = otherCard.querySelector('.routine-right-training-max');
+        if (field && field !== target) field.value = freshProfile.single;
+        if (splitField && splitField !== target) splitField.checked = freshProfile.split;
+        if (leftField && leftField !== target) leftField.value = freshProfile.left;
+        if (rightField && rightField !== target) rightField.value = freshProfile.right;
         updateRoutinePlanCalculated(otherCard, otherItem, freshCatalog);
       }
     });
