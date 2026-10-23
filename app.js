@@ -64,7 +64,25 @@ const weekPrimaryLegend = document.getElementById('weekPrimaryLegend');
 const weekSecondaryLegend = document.getElementById('weekSecondaryLegend');
 const dashboardWeekInput = document.getElementById('dashboardWeek');
 const dashboardWeekNowBtn = document.getElementById('dashboardWeekNow');
+const dashboardWeekPrevBtn = document.getElementById('dashboardWeekPrev');
+const dashboardWeekNextBtn = document.getElementById('dashboardWeekNext');
 const dashboardWeekLabel = document.getElementById('dashboardWeekLabel');
+const dashboardWeekKpis = document.getElementById('dashboardWeekKpis');
+const dashboardSessionBadge = document.getElementById('dashboardSessionBadge');
+const dashboardWeekSessions = document.getElementById('dashboardWeekSessions');
+const dashboardWeekExercises = document.getElementById('dashboardWeekExercises');
+const dashboardWeekMuscles = document.getElementById('dashboardWeekMuscles');
+const dashboardWeightNutritionKpis = document.getElementById('dashboardWeightNutritionKpis');
+const dashboardNutritionDays = document.getElementById('dashboardNutritionDays');
+const weightTrendRangeSelect = document.getElementById('weightTrendRange');
+const weightWeeklyChart = document.getElementById('weightWeeklyChart');
+const weightWeeklyReadout = document.getElementById('weightWeeklyReadout');
+const nutritionWeekChart = document.getElementById('nutritionWeekChart');
+const nutritionWeekReadout = document.getElementById('nutritionWeekReadout');
+const exportDashboardWeekBtn = document.getElementById('exportDashboardWeekBtn');
+const exportWeekExercisesBtn = document.getElementById('exportWeekExercisesBtn');
+const exportWeekMusclesBtn = document.getElementById('exportWeekMusclesBtn');
+const exportWeightNutritionBtn = document.getElementById('exportWeightNutritionBtn');
 const visitCountGranularitySelect = document.getElementById('visitCountGranularity');
 const focusName = document.getElementById('focusName');
 const focusExerciseSelect = document.getElementById('focusExerciseSelect');
@@ -3539,6 +3557,7 @@ function refreshProgress() {
   const all = loadAll();
   all[state.date] = cloneState();
 
+  renderDashboardReport(all);
   renderWeekCharts(all);
   updateFocusExerciseSelector(all);
   renderExerciseFocus(all);
@@ -4152,8 +4171,9 @@ function getStoredVisitGranularity() {
 
 function updateDashboardWeekLabel() {
   if (!dashboardWeekLabel) return;
-  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
-  dashboardWeekLabel.textContent = `Week van ${formatShortDate(dates[0])} t/m ${formatShortDate(dates[6])}`;
+  const week = selectedDashboardWeek || getStoredDashboardWeek();
+  const dates = getWeekDates(week);
+  dashboardWeekLabel.textContent = `${week.replace('-W', ' · week ')} · ${formatShortDate(dates[0])} t/m ${formatShortDate(dates[6])}`;
 }
 
 function setSelectedDashboardWeek(value, options = {}) {
@@ -4164,6 +4184,13 @@ function setSelectedDashboardWeek(value, options = {}) {
   if (!options.skipPersist) localStorage.setItem(DASHBOARD_WEEK_KEY, selectedDashboardWeek);
   updateDashboardWeekLabel();
   if (!options.skipRefresh) refreshProgress();
+}
+
+function shiftDashboardWeek(amount) {
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
+  const next = parseDate(dates[0]);
+  next.setDate(next.getDate() + Number(amount || 0) * 7);
+  setSelectedDashboardWeek(formatWeekInputValue(toIsoDateString(next)));
 }
 
 function setSelectedVisitGranularity(value, options = {}) {
@@ -4199,6 +4226,378 @@ function computeWeekTotals(all, dates) {
   });
 
   return { primaryTotals, secondaryTotals };
+}
+
+function getDashboardSetRows(exercise) {
+  return (exercise?.sets || []).filter(hasMeaningfulSetData);
+}
+
+function getDashboardSetReps(set, exercise) {
+  return getSetRepData(set, exercise).total || 0;
+}
+
+function buildDashboardWeekSummary(all, dates) {
+  const exercisesByKey = new Map();
+  const musclesByKey = new Map();
+  const sessions = [];
+
+  dates.forEach(date => {
+    const day = all[date] || {};
+    const dayExercises = [];
+
+    (day.exercises || []).forEach(exercise => {
+      const name = String(exercise.name || '').trim();
+      const sets = getDashboardSetRows(exercise);
+      if (!name || !sets.length) return;
+      const reps = sets.reduce((sum, set) => sum + getDashboardSetReps(set, exercise), 0);
+      const volume = sets.reduce((sum, set) => sum + setVolume(set, exercise), 0);
+      const muscles = resolveExerciseMuscles(exercise);
+      const key = normalizeExerciseName(name);
+      const dayRow = { date, name, sets: sets.length, reps, volume, primary: muscles.primary };
+      dayExercises.push(dayRow);
+
+      if (!exercisesByKey.has(key)) {
+        exercisesByKey.set(key, { name, occurrences: 0, sets: 0, reps: 0, volume: 0, days: [] });
+      }
+      const exerciseTotal = exercisesByKey.get(key);
+      exerciseTotal.occurrences += 1;
+      exerciseTotal.sets += sets.length;
+      exerciseTotal.reps += reps;
+      exerciseTotal.volume += volume;
+      exerciseTotal.days.push(dayRow);
+
+      const primary = muscles.primary || 'Overig';
+      if (!musclesByKey.has(primary)) {
+        musclesByKey.set(primary, { name: primary, dates: new Set(), exercises: new Map(), sets: 0, reps: 0, volume: 0 });
+      }
+      const muscleTotal = musclesByKey.get(primary);
+      muscleTotal.dates.add(date);
+      muscleTotal.sets += sets.length;
+      muscleTotal.reps += reps;
+      muscleTotal.volume += volume;
+      if (!muscleTotal.exercises.has(key)) {
+        muscleTotal.exercises.set(key, { name, sets: 0, reps: 0, volume: 0 });
+      }
+      const muscleExercise = muscleTotal.exercises.get(key);
+      muscleExercise.sets += sets.length;
+      muscleExercise.reps += reps;
+      muscleExercise.volume += volume;
+    });
+
+    if (dayExercises.length || isWorkoutDay(day)) {
+      sessions.push({
+        date,
+        sessionName: String(day.sessionName || '').trim() || 'Training',
+        exercises: dayExercises,
+        exerciseCount: dayExercises.length,
+        sets: dayExercises.reduce((sum, row) => sum + row.sets, 0),
+        reps: dayExercises.reduce((sum, row) => sum + row.reps, 0),
+        volume: dayExercises.reduce((sum, row) => sum + row.volume, 0),
+        minutes: computeTrainingDurationMinutes(day)
+      });
+    }
+  });
+
+  const exercises = Array.from(exercisesByKey.values()).sort((a, b) => b.volume - a.volume || a.name.localeCompare(b.name, 'nl-NL'));
+  const muscles = Array.from(musclesByKey.values()).map(row => ({
+    ...row,
+    trainingDays: row.dates.size,
+    exerciseCount: row.exercises.size,
+    exerciseRows: Array.from(row.exercises.values()).sort((a, b) => b.volume - a.volume)
+  })).sort((a, b) => b.volume - a.volume || a.name.localeCompare(b.name, 'nl-NL'));
+
+  return {
+    sessions,
+    exercises,
+    muscles,
+    totals: {
+      sessions: sessions.length,
+      exercises: exercises.length,
+      sets: exercises.reduce((sum, row) => sum + row.sets, 0),
+      reps: exercises.reduce((sum, row) => sum + row.reps, 0),
+      volume: exercises.reduce((sum, row) => sum + row.volume, 0),
+      minutes: sessions.reduce((sum, row) => sum + row.minutes, 0)
+    }
+  };
+}
+
+function hasDashboardNutrition(day) {
+  const nutrition = normalizeNutritionData(day?.nutrition || day);
+  return nutrition.mealEntries.length > 0
+    || [nutrition.calories, nutrition.protein, nutrition.fat, nutrition.carbs].some(value => String(value ?? '').trim() !== '');
+}
+
+function buildDashboardNutritionRows(all, dates) {
+  return dates.map(date => {
+    const day = all[date] || {};
+    const nutrition = normalizeNutritionData(day?.nutrition || day);
+    const totals = getNutritionTotals(nutrition);
+    const meals = MEAL_GROUPS.map(([key, label]) => {
+      const entries = nutrition.mealEntries.filter(entry => entry.meal === key);
+      const mealTotals = entries.reduce((result, entry) => {
+        const values = scaleEntryNutrients(entry);
+        NUTRIENT_KEYS.forEach(nutrient => { result[nutrient] += values[nutrient]; });
+        return result;
+      }, normalizeNutrients({}));
+      return { key, label, entries, totals: mealTotals };
+    }).filter(meal => meal.entries.length);
+    return {
+      date,
+      filled: hasDashboardNutrition(day),
+      totals,
+      meals,
+      steps: Number(nutrition.steps) || 0,
+      sleepMinutes: computeSleepDurationMinutes(nutrition.bedTime, nutrition.wakeTime),
+      bodyweight: Number(day.bodyweight) || 0
+    };
+  });
+}
+
+function averageDashboardValue(rows, getter) {
+  if (!rows.length) return 0;
+  return rows.reduce((sum, row) => sum + Number(getter(row) || 0), 0) / rows.length;
+}
+
+function getPreviousDashboardWeekDates(dates) {
+  const start = parseDate(dates[0]);
+  start.setDate(start.getDate() - 7);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return toIsoDateString(date);
+  });
+}
+
+function formatDashboardDelta(value, suffix = '') {
+  if (!Number.isFinite(value) || Math.abs(value) < 0.005) return `0${suffix}`;
+  return `${value > 0 ? '+' : ''}${formatNumber(Math.round(value * 10) / 10)}${suffix}`;
+}
+
+function dashboardKpiHtml(label, value, detail = '', tone = '') {
+  return `<article class="dashboard-kpi ${tone}"><span>${escapeHtml(label)}</span><strong>${value}</strong>${detail ? `<small>${detail}</small>` : ''}</article>`;
+}
+
+function renderDashboardWeekKpis(summary, previousSummary, nutritionRows, previousNutritionRows, all, dates) {
+  if (!dashboardWeekKpis) return;
+  const filledNutrition = nutritionRows.filter(row => row.filled);
+  const previousFilledNutrition = previousNutritionRows.filter(row => row.filled);
+  const weights = dates.map(date => Number(all[date]?.bodyweight)).filter(value => value > 0);
+  const previousDates = getPreviousDashboardWeekDates(dates);
+  const previousWeights = previousDates.map(date => Number(all[date]?.bodyweight)).filter(value => value > 0);
+  const weightAverage = weights.length ? averageDashboardValue(weights, value => value) : 0;
+  const previousWeightAverage = previousWeights.length ? averageDashboardValue(previousWeights, value => value) : 0;
+  const calorieAverage = averageDashboardValue(filledNutrition, row => row.totals.calories);
+  const previousCalorieAverage = averageDashboardValue(previousFilledNutrition, row => row.totals.calories);
+  const proteinAverage = averageDashboardValue(filledNutrition, row => row.totals.protein);
+  const volumeDelta = previousSummary.totals.volume
+    ? ((summary.totals.volume - previousSummary.totals.volume) / previousSummary.totals.volume) * 100
+    : 0;
+
+  dashboardWeekKpis.innerHTML = [
+    dashboardKpiHtml('Trainingen', formatNumber(summary.totals.sessions), `${formatDashboardDelta(summary.totals.sessions - previousSummary.totals.sessions)} t.o.v. vorige week`, 'accent'),
+    dashboardKpiHtml('Oefeningen', formatNumber(summary.totals.exercises), 'unieke oefeningen'),
+    dashboardKpiHtml('Sets & reps', `${formatNumber(summary.totals.sets)} / ${formatNumber(summary.totals.reps)}`, 'sets / totale reps'),
+    dashboardKpiHtml('Totaal volume', `${formatNumber(Math.round(summary.totals.volume))} kg`, previousSummary.totals.volume ? `${formatDashboardDelta(volumeDelta, '%')} t.o.v. vorige week` : 'eerste vergelijkbare week', 'volume'),
+    dashboardKpiHtml('Gewicht gemiddeld', weightAverage ? `${formatNumber(Math.round(weightAverage * 100) / 100)} kg` : '-', weightAverage && previousWeightAverage ? `${formatDashboardDelta(weightAverage - previousWeightAverage, ' kg')} week-op-week` : `${weights.length} meting${weights.length === 1 ? '' : 'en'}`),
+    dashboardKpiHtml('Calorieën gemiddeld', calorieAverage ? `${formatNumber(Math.round(calorieAverage))} kcal` : '-', previousCalorieAverage ? `${formatDashboardDelta(calorieAverage - previousCalorieAverage, ' kcal')} week-op-week` : `${filledNutrition.length} voedingsdag${filledNutrition.length === 1 ? '' : 'en'}`),
+    dashboardKpiHtml('Eiwit gemiddeld', proteinAverage ? `${formatNumber(Math.round(proteinAverage))} g` : '-', `${filledNutrition.length} ingevulde dag${filledNutrition.length === 1 ? '' : 'en'}`)
+  ].join('');
+}
+
+function renderDashboardSessions(summary) {
+  if (!dashboardWeekSessions) return;
+  if (dashboardSessionBadge) dashboardSessionBadge.textContent = `${summary.sessions.length} training${summary.sessions.length === 1 ? '' : 'en'}`;
+  if (!summary.sessions.length) {
+    dashboardWeekSessions.innerHTML = '<p class="dashboard-empty">Geen uitgevoerde trainingen in deze week.</p>';
+    return;
+  }
+  const counts = summary.sessions.reduce((result, session) => {
+    result[session.sessionName] = (result[session.sessionName] || 0) + 1;
+    return result;
+  }, {});
+  const countLine = Object.entries(counts).map(([name, count]) => `${escapeHtml(name)} <b>${count}×</b>`).join('<span class="dot">·</span>');
+  dashboardWeekSessions.innerHTML = `<div class="session-count-line">${countLine}</div><div class="session-cards">${summary.sessions.map(session => `
+    <button class="session-card" type="button" data-dashboard-date="${session.date}">
+      <span>${formatLongDate(session.date)}</span><strong>${escapeHtml(session.sessionName)}</strong>
+      <small>${session.exerciseCount} oefeningen · ${session.sets} sets · ${formatNumber(session.reps)} reps · ${formatNumber(Math.round(session.volume))} kg${session.minutes ? ` · ${session.minutes} min` : ''}</small>
+    </button>`).join('')}</div>`;
+}
+
+function renderDashboardExerciseSummary(summary) {
+  if (!dashboardWeekExercises) return;
+  if (!summary.exercises.length) {
+    dashboardWeekExercises.innerHTML = '<p class="dashboard-empty">Nog geen oefeningen gelogd in deze week.</p>';
+    return;
+  }
+  dashboardWeekExercises.innerHTML = summary.exercises.map(row => `<details class="weekly-report-row">
+    <summary><span class="report-name"><strong>${escapeHtml(row.name)}</strong><small>${row.occurrences}× uitgevoerd</small></span><span><b>${row.sets}</b><small>sets</small></span><span><b>${formatNumber(row.reps)}</b><small>reps</small></span><span class="report-volume"><b>${formatNumber(Math.round(row.volume))} kg</b><small>volume</small></span></summary>
+    <div class="report-detail">${row.days.map(day => `<button type="button" data-dashboard-date="${day.date}"><span>${formatLongDate(day.date)}</span><b>${day.sets} sets · ${formatNumber(day.reps)} reps · ${formatNumber(Math.round(day.volume))} kg</b></button>`).join('')}</div>
+  </details>`).join('');
+}
+
+function renderDashboardMuscleSummary(summary) {
+  if (!dashboardWeekMuscles) return;
+  if (!summary.muscles.length) {
+    dashboardWeekMuscles.innerHTML = '<p class="dashboard-empty">Nog geen primary-muscledata in deze week.</p>';
+    return;
+  }
+  dashboardWeekMuscles.innerHTML = summary.muscles.map(row => `<details class="weekly-report-row muscle-row" style="--row-color:${CATEGORY_COLORS[row.name] || '#0f6b66'}">
+    <summary><span class="report-name"><strong>${escapeHtml(row.name)}</strong><small>${row.trainingDays} trainingsdag${row.trainingDays === 1 ? '' : 'en'} · ${row.exerciseCount} oefeningen</small></span><span><b>${row.sets}</b><small>sets</small></span><span><b>${formatNumber(row.reps)}</b><small>reps</small></span><span class="report-volume"><b>${formatNumber(Math.round(row.volume))} kg</b><small>volume</small></span></summary>
+    <div class="report-detail">${row.exerciseRows.map(exercise => `<div><span>${escapeHtml(exercise.name)}</span><b>${exercise.sets} sets · ${formatNumber(exercise.reps)} reps · ${formatNumber(Math.round(exercise.volume))} kg</b></div>`).join('')}</div>
+  </details>`).join('');
+}
+
+function getDashboardWeightWeeks(all) {
+  const groups = new Map();
+  getBodyweightPoints(all).forEach(point => {
+    const week = formatWeekInputValue(point.date);
+    if (!groups.has(week)) groups.set(week, []);
+    groups.get(week).push(point);
+  });
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([week, points]) => {
+    const values = points.map(point => point.weight);
+    const dates = getWeekDates(week);
+    return {
+      week,
+      date: dates[0],
+      endDate: dates[6],
+      weight: averageDashboardValue(values, value => value),
+      min: Math.min(...values),
+      max: Math.max(...values),
+      count: values.length
+    };
+  });
+}
+
+function renderDashboardWeightChart(all) {
+  if (!weightWeeklyChart) return;
+  const selectedWeek = selectedDashboardWeek || getStoredDashboardWeek();
+  const rangeValue = weightTrendRangeSelect?.value || '8';
+  let points = getDashboardWeightWeeks(all).filter(point => point.week <= selectedWeek);
+  if (rangeValue !== 'all') points = points.slice(-Math.max(1, Number(rangeValue) || 8));
+  drawChart(weightWeeklyChart, points, {
+    valueKey: 'weight',
+    lineColor: '#0f6b66',
+    dotColor: '#c2552d',
+    emptyLabel: 'Nog geen lichaamsgewicht beschikbaar.',
+    yLabel: 'Weekgemiddelde (kg)',
+    tickFormatter: value => `${formatNumber(value)} kg`,
+    readoutEl: weightWeeklyReadout,
+    readoutFormatter: hit => `${hit.week.replace('-W', ' · week ')} • ${formatNumber(Math.round(hit.weight * 100) / 100)} kg gemiddeld • ${hit.count} meting${hit.count === 1 ? '' : 'en'}`,
+    tooltipBuilder: hit => `<span class="title">${hit.week.replace('-W', ' · week ')}</span><span class="value">Gemiddeld: ${formatNumber(Math.round(hit.weight * 100) / 100)} kg</span><span class="title">Laag ${formatNumber(hit.min)} kg · Hoog ${formatNumber(hit.max)} kg · ${hit.count} metingen</span>`
+  });
+}
+
+function drawNutritionWeekChart(canvas, rows) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const padding = { left: 54, right: 52, top: 24, bottom: 42 };
+  const chartWidth = w - padding.left - padding.right;
+  const chartHeight = h - padding.top - padding.bottom;
+  const maxCalories = Math.max(1, ...rows.map(row => row.totals.calories));
+  const maxProtein = Math.max(1, ...rows.map(row => row.totals.protein));
+  const slot = chartWidth / Math.max(rows.length, 1);
+  const hitboxes = [];
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(26,26,26,.12)';
+  ctx.beginPath(); ctx.moveTo(padding.left, padding.top); ctx.lineTo(padding.left, h - padding.bottom); ctx.lineTo(w - padding.right, h - padding.bottom); ctx.stroke();
+  rows.forEach((row, index) => {
+    const x = padding.left + index * slot + slot * 0.18;
+    const width = slot * 0.64;
+    const barHeight = row.filled ? (row.totals.calories / maxCalories) * chartHeight : 0;
+    const y = h - padding.bottom - barHeight;
+    ctx.fillStyle = row.filled ? 'rgba(194,85,45,.72)' : 'rgba(26,26,26,.06)';
+    ctx.fillRect(x, row.filled ? y : h - padding.bottom - 2, width, row.filled ? barHeight : 2);
+    ctx.fillStyle = '#6a5e54'; ctx.font = '11px Space Grotesk'; ctx.textAlign = 'center';
+    ctx.fillText(new Intl.DateTimeFormat('nl-NL', { weekday: 'short' }).format(parseDate(row.date)), x + width / 2, h - 14);
+    hitboxes.push({ x, y: padding.top, width, height: chartHeight, row });
+  });
+  ctx.strokeStyle = '#0f6b66'; ctx.lineWidth = 3; ctx.beginPath();
+  let started = false;
+  rows.forEach((row, index) => {
+    if (!row.filled) return;
+    const x = padding.left + index * slot + slot / 2;
+    const y = h - padding.bottom - (row.totals.protein / maxProtein) * chartHeight;
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  rows.forEach((row, index) => {
+    if (!row.filled) return;
+    const x = padding.left + index * slot + slot / 2;
+    const y = h - padding.bottom - (row.totals.protein / maxProtein) * chartHeight;
+    ctx.fillStyle = '#0f6b66'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.fillStyle = '#c2552d'; ctx.font = '700 11px Space Grotesk'; ctx.textAlign = 'left'; ctx.fillText('kcal', 8, 16);
+  ctx.fillStyle = '#0f6b66'; ctx.textAlign = 'right'; ctx.fillText('eiwit', w - 8, 16);
+  canvas._nutritionHitboxes = hitboxes;
+  if (canvas._nutritionHoverBound) return;
+  canvas._nutritionHoverBound = true;
+  const nutritionHoverHandler = event => {
+    const point = getCanvasPointer(canvas, event);
+    if (!point) return;
+    const hit = (canvas._nutritionHitboxes || []).find(box => point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height);
+    if (!hit) { hideChartTooltip(); return; }
+    const row = hit.row;
+    if (nutritionWeekReadout) nutritionWeekReadout.textContent = row.filled
+      ? `${formatShortDate(row.date)} • ${formatNumber(Math.round(row.totals.calories))} kcal • E ${formatNumber(Math.round(row.totals.protein))} g • K ${formatNumber(Math.round(row.totals.carbs))} g • V ${formatNumber(Math.round(row.totals.fat))} g`
+      : `${formatShortDate(row.date)} • geen voeding ingevuld`;
+    showChartTooltip(`<span class="title">${formatLongDate(row.date)}</span><span class="value">${row.filled ? `${formatNumber(Math.round(row.totals.calories))} kcal` : 'Geen voeding ingevuld'}</span>${row.filled ? `<span class="title">Eiwit ${formatNumber(row.totals.protein)} g · Koolhydraten ${formatNumber(row.totals.carbs)} g · Vet ${formatNumber(row.totals.fat)} g · Vezels ${formatNumber(row.totals.fiber)} g</span>` : ''}`, point.clientX, point.clientY);
+  };
+  ['pointermove', 'mousemove', 'pointerdown', 'touchstart', 'touchmove'].forEach(eventName => {
+    canvas.addEventListener(eventName, nutritionHoverHandler, eventName.startsWith('touch') ? { passive: true } : undefined);
+  });
+  const nutritionLeaveHandler = () => {
+    hideChartTooltip();
+    if (nutritionWeekReadout) nutritionWeekReadout.textContent = 'Beweeg over een dag voor alle macro\'s.';
+  };
+  canvas.addEventListener('mouseleave', nutritionLeaveHandler);
+  canvas.addEventListener('pointerleave', nutritionLeaveHandler);
+  canvas.addEventListener('touchend', nutritionLeaveHandler, { passive: true });
+}
+
+function renderDashboardNutrition(nutritionRows, all, dates) {
+  const filled = nutritionRows.filter(row => row.filled);
+  const weights = dates.map(date => Number(all[date]?.bodyweight)).filter(value => value > 0);
+  const previousDates = getPreviousDashboardWeekDates(dates);
+  const previousWeights = previousDates.map(date => Number(all[date]?.bodyweight)).filter(value => value > 0);
+  const weightAverage = weights.length ? averageDashboardValue(weights, value => value) : 0;
+  const previousWeightAverage = previousWeights.length ? averageDashboardValue(previousWeights, value => value) : 0;
+  const averages = key => averageDashboardValue(filled, row => row.totals[key]);
+  if (dashboardWeightNutritionKpis) {
+    dashboardWeightNutritionKpis.innerHTML = [
+      dashboardKpiHtml('Weekgewicht', weightAverage ? `${formatNumber(Math.round(weightAverage * 100) / 100)} kg` : '-', weightAverage && previousWeightAverage ? `${formatDashboardDelta(weightAverage - previousWeightAverage, ' kg')} vs vorige week` : `${weights.length} metingen`),
+      dashboardKpiHtml('Calorieën', filled.length ? `${formatNumber(Math.round(averages('calories')))} kcal` : '-', 'gemiddeld per ingevulde dag', 'volume'),
+      dashboardKpiHtml('Eiwit', filled.length ? `${formatNumber(Math.round(averages('protein')))} g` : '-', 'gemiddeld per ingevulde dag'),
+      dashboardKpiHtml('Koolhydraten', filled.length ? `${formatNumber(Math.round(averages('carbs')))} g` : '-', 'gemiddeld per ingevulde dag'),
+      dashboardKpiHtml('Vet', filled.length ? `${formatNumber(Math.round(averages('fat')))} g` : '-', 'gemiddeld per ingevulde dag'),
+      dashboardKpiHtml('Vezels', filled.length ? `${formatNumber(Math.round(averages('fiber') * 10) / 10)} g` : '-', `${filled.length}/7 voedingsdagen`)
+    ].join('');
+  }
+  drawNutritionWeekChart(nutritionWeekChart, nutritionRows);
+  if (!dashboardNutritionDays) return;
+  dashboardNutritionDays.innerHTML = nutritionRows.map(row => `<details class="nutrition-day-row${row.filled ? '' : ' empty'}">
+    <summary><span><strong>${formatLongDate(row.date)}</strong><small>${row.bodyweight ? `${formatNumber(row.bodyweight)} kg` : 'geen weging'}</small></span><b>${row.filled ? `${formatNumber(Math.round(row.totals.calories))} kcal` : 'niet ingevuld'}</b><small>${row.filled ? `E ${formatNumber(row.totals.protein)} · K ${formatNumber(row.totals.carbs)} · V ${formatNumber(row.totals.fat)} · vezels ${formatNumber(row.totals.fiber)} g` : 'Open het voedingstabblad om deze dag aan te vullen'}</small></summary>
+    <div>${row.meals.length ? row.meals.map(meal => `<article><span>${escapeHtml(meal.label)}</span><b>${formatNumber(Math.round(meal.totals.calories))} kcal · ${formatNumber(meal.totals.protein)} g eiwit</b><small>${meal.entries.map(entry => escapeHtml(entry.name)).join(', ')}</small></article>`).join('') : '<p>Geen maaltijdproducten vastgelegd.</p>'}<button class="ghost small" type="button" data-dashboard-nutrition-date="${row.date}">Open voeding</button></div>
+  </details>`).join('');
+}
+
+function renderDashboardReport(all) {
+  const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
+  const previousDates = getPreviousDashboardWeekDates(dates);
+  const summary = buildDashboardWeekSummary(all, dates);
+  const previousSummary = buildDashboardWeekSummary(all, previousDates);
+  const nutritionRows = buildDashboardNutritionRows(all, dates);
+  const previousNutritionRows = buildDashboardNutritionRows(all, previousDates);
+  renderDashboardWeekKpis(summary, previousSummary, nutritionRows, previousNutritionRows, all, dates);
+  renderDashboardSessions(summary);
+  renderDashboardExerciseSummary(summary);
+  renderDashboardMuscleSummary(summary);
+  renderDashboardNutrition(nutritionRows, all, dates);
+  renderDashboardWeightChart(all);
 }
 
 function renderLegend(container, groups, activeGroup = '', chartKey = '') {
@@ -6591,6 +6990,75 @@ function getCurrentAllData() {
   return all;
 }
 
+function getDashboardExportData() {
+  const all = getCurrentAllData();
+  const week = selectedDashboardWeek || getStoredDashboardWeek();
+  const dates = getWeekDates(week);
+  return { all, week, dates, summary: buildDashboardWeekSummary(all, dates), nutritionRows: buildDashboardNutritionRows(all, dates) };
+}
+
+function buildDashboardExerciseExportRows(summary) {
+  const rows = [['Oefening', 'Aantal uitvoeringen', 'Sets', 'Reps', 'Volume (kg)']];
+  summary.exercises.forEach(row => rows.push([row.name, row.occurrences, row.sets, row.reps, row.volume]));
+  return rows;
+}
+
+function buildDashboardMuscleExportRows(summary) {
+  const rows = [['Primary muscle', 'Trainingsdagen', 'Oefeningen', 'Sets', 'Reps', 'Volume (kg)']];
+  summary.muscles.forEach(row => rows.push([row.name, row.trainingDays, row.exerciseCount, row.sets, row.reps, row.volume]));
+  return rows;
+}
+
+function buildDashboardSessionExportRows(summary) {
+  const rows = [['Datum', 'Training', 'Oefeningen', 'Sets', 'Reps', 'Volume (kg)', 'Duur (min)']];
+  summary.sessions.forEach(row => rows.push([row.date, row.sessionName, row.exerciseCount, row.sets, row.reps, row.volume, row.minutes || '']));
+  return rows;
+}
+
+function buildDashboardNutritionExportRows(rows) {
+  const result = [['Datum', 'Calorieen', 'Eiwit (g)', 'Koolhydraten (g)', 'Vet (g)', 'Vezels (g)', 'Zout (g)', 'Stappen', 'Slaap (min)', 'Gewicht (kg)']];
+  rows.forEach(row => result.push([
+    row.date, row.filled ? row.totals.calories : '', row.filled ? row.totals.protein : '',
+    row.filled ? row.totals.carbs : '', row.filled ? row.totals.fat : '', row.filled ? row.totals.fiber : '',
+    row.filled ? row.totals.salt : '', row.steps || '', row.sleepMinutes || '', row.bodyweight || ''
+  ]));
+  return result;
+}
+
+function exportDashboardWeekReport() {
+  const data = getDashboardExportData();
+  const summaryRows = [['Onderdeel', 'Waarde'], ['Week', data.week], ['Trainingen', data.summary.totals.sessions],
+    ['Unieke oefeningen', data.summary.totals.exercises], ['Sets', data.summary.totals.sets], ['Reps', data.summary.totals.reps],
+    ['Volume (kg)', data.summary.totals.volume], ['Trainingsduur (min)', data.summary.totals.minutes]];
+  downloadWorkbookXml(`fitness-weekrapport-${data.week}.xlsx`, [
+    { name: 'Samenvatting', rows: summaryRows },
+    { name: 'Trainingsdagen', rows: buildDashboardSessionExportRows(data.summary) },
+    { name: 'Oefeningen', rows: buildDashboardExerciseExportRows(data.summary) },
+    { name: 'Primary muscles', rows: buildDashboardMuscleExportRows(data.summary) },
+    { name: 'Voeding en gewicht', rows: buildDashboardNutritionExportRows(data.nutritionRows) }
+  ]);
+}
+
+function exportDashboardExercises() {
+  const data = getDashboardExportData();
+  downloadWorkbookXml(`oefeningen-${data.week}.xlsx`, [{ name: 'Oefeningen', rows: buildDashboardExerciseExportRows(data.summary) }]);
+}
+
+function exportDashboardMuscles() {
+  const data = getDashboardExportData();
+  downloadWorkbookXml(`primary-muscles-${data.week}.xlsx`, [{ name: 'Primary muscles', rows: buildDashboardMuscleExportRows(data.summary) }]);
+}
+
+function exportDashboardWeightNutrition() {
+  const data = getDashboardExportData();
+  const weightRows = [['Week', 'Startdatum', 'Einddatum', 'Gemiddeld gewicht (kg)', 'Laagste (kg)', 'Hoogste (kg)', 'Metingen']];
+  getDashboardWeightWeeks(data.all).forEach(row => weightRows.push([row.week, row.date, row.endDate, row.weight, row.min, row.max, row.count]));
+  downloadWorkbookXml(`gewicht-voeding-${data.week}.xlsx`, [
+    { name: 'Voeding geselecteerde week', rows: buildDashboardNutritionExportRows(data.nutritionRows) },
+    { name: 'Gewicht weekgemiddelden', rows: weightRows }
+  ]);
+}
+
 function exportWeekPrimaryData() {
   const all = getCurrentAllData();
   const dates = getWeekDates(selectedDashboardWeek || getStoredDashboardWeek());
@@ -7631,6 +8099,32 @@ if (visitCountGranularitySelect) {
 if (dashboardWeekNowBtn) {
   dashboardWeekNowBtn.addEventListener('click', () => {
     setSelectedDashboardWeek(formatWeekInputValue(todayISO()));
+  });
+}
+
+if (dashboardWeekPrevBtn) dashboardWeekPrevBtn.addEventListener('click', () => shiftDashboardWeek(-1));
+if (dashboardWeekNextBtn) dashboardWeekNextBtn.addEventListener('click', () => shiftDashboardWeek(1));
+if (weightTrendRangeSelect) weightTrendRangeSelect.addEventListener('change', () => renderDashboardWeightChart(getCurrentAllData()));
+if (exportDashboardWeekBtn) exportDashboardWeekBtn.addEventListener('click', exportDashboardWeekReport);
+if (exportWeekExercisesBtn) exportWeekExercisesBtn.addEventListener('click', exportDashboardExercises);
+if (exportWeekMusclesBtn) exportWeekMusclesBtn.addEventListener('click', exportDashboardMuscles);
+if (exportWeightNutritionBtn) exportWeightNutritionBtn.addEventListener('click', exportDashboardWeightNutrition);
+
+if (dashboardPage) {
+  dashboardPage.addEventListener('click', event => {
+    const logTarget = event.target.closest('[data-dashboard-date]');
+    if (logTarget) {
+      switchToDate(logTarget.dataset.dashboardDate);
+      setActivePage('log');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const nutritionTarget = event.target.closest('[data-dashboard-nutrition-date]');
+    if (nutritionTarget) {
+      switchToDate(nutritionTarget.dataset.dashboardNutritionDate);
+      setActivePage('nutrition');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   });
 }
 

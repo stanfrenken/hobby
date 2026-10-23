@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20261023e" />
+  <link rel="stylesheet" href="styles.css?v=20261023f" />
 </head>
 <body>
   <div class="bg"></div>
@@ -157,15 +157,60 @@
       <section id="dashboardPage" class="page">
         <div class="dashboard-grid">
           <section class="panel dashboard-toolbar">
-            <div class="toolbar-row">
+            <div class="dashboard-week-nav">
+              <button id="dashboardWeekPrev" class="ghost week-arrow" type="button" aria-label="Vorige week">&#8249;</button>
               <label class="control compact-control">
                 <span>Week kiezen</span>
                 <input id="dashboardWeek" type="week" />
               </label>
               <button id="dashboardWeekNow" class="ghost" type="button">Deze week</button>
+              <button id="dashboardWeekNext" class="ghost week-arrow" type="button" aria-label="Volgende week">&#8250;</button>
+              <button id="exportDashboardWeekBtn" class="primary small" type="button">Download weekrapport</button>
             </div>
-            <p id="dashboardWeekLabel" class="hint">Kies welke week je in de stacked charts wilt zien.</p>
+            <p id="dashboardWeekLabel" class="dashboard-week-label">Weekoverzicht wordt geladen.</p>
           </section>
+
+          <section class="panel panel-wide dashboard-hero">
+            <div class="dashboard-section-heading"><div><span class="eyebrow">Weekrapport</span><h2>In één oogopslag</h2></div></div>
+            <div id="dashboardWeekKpis" class="dashboard-kpis"></div>
+          </section>
+
+          <section class="panel panel-wide dashboard-report-section">
+            <div class="dashboard-section-heading"><div><span class="eyebrow">Planning uitgevoerd</span><h2>Trainingsdagen</h2></div><span id="dashboardSessionBadge" class="badge">0 trainingen</span></div>
+            <div id="dashboardWeekSessions" class="dashboard-session-list"></div>
+          </section>
+
+          <section class="panel panel-wide dashboard-report-section">
+            <div class="dashboard-section-heading"><div><span class="eyebrow">Alles bij elkaar</span><h2>Oefeningen deze week</h2></div><button id="exportWeekExercisesBtn" class="ghost small" type="button">Excel</button></div>
+            <div id="dashboardWeekExercises" class="weekly-report-list"></div>
+          </section>
+
+          <section class="panel panel-wide dashboard-report-section">
+            <div class="dashboard-section-heading"><div><span class="eyebrow">Belasting per hoofdgroep</span><h2>Primary muscles</h2></div><button id="exportWeekMusclesBtn" class="ghost small" type="button">Excel</button></div>
+            <div id="dashboardWeekMuscles" class="weekly-report-list"></div>
+          </section>
+
+          <section class="panel panel-wide dashboard-health-section">
+            <div class="dashboard-section-heading"><div><span class="eyebrow">Herstel & energie</span><h2>Gewicht en voeding</h2></div><button id="exportWeightNutritionBtn" class="ghost small" type="button">Excel</button></div>
+            <div id="dashboardWeightNutritionKpis" class="dashboard-kpis compact"></div>
+            <div class="health-chart-grid">
+              <article class="health-chart-card">
+                <div class="health-chart-head"><div><strong>Weekgemiddelde lichaamsgewicht</strong><span>Dikke weektrend zonder dagelijkse ruis.</span></div><select id="weightTrendRange"><option value="4">4 weken</option><option value="8" selected>8 weken</option><option value="12">12 weken</option><option value="26">6 maanden</option><option value="all">Alles</option></select></div>
+                <canvas id="weightWeeklyChart" width="720" height="260"></canvas>
+                <div id="weightWeeklyReadout" class="chart-readout">Beweeg over de lijn voor details.</div>
+              </article>
+              <article class="health-chart-card">
+                <div class="health-chart-head"><div><strong>Voeding deze week</strong><span>Calorieën als balk, eiwit als lijn.</span></div></div>
+                <canvas id="nutritionWeekChart" width="720" height="260"></canvas>
+                <div id="nutritionWeekReadout" class="chart-readout">Beweeg over een dag voor alle macro's.</div>
+              </article>
+            </div>
+            <div id="dashboardNutritionDays" class="nutrition-week-list"></div>
+          </section>
+
+          <details class="dashboard-depth panel-wide">
+            <summary><span><strong>Verdieping</strong><small>Oefeningfocus, spiervolume, trainingsduur, bezoeken, tevredenheid en alle historische grafieken</small></span><b>Open analyses</b></summary>
+            <div class="dashboard-depth-grid">
 
           <section class="panel">
             <div class="panel-header">
@@ -277,6 +322,8 @@
               <p id="bodyweightHint" class="hint">Vul per dag je gewicht in om je trend te zien.</p>
             </div>
           </section>
+            </div>
+          </details>
 
           <section class="panel">
             <div class="panel-header">
@@ -846,7 +893,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20261023e"></script>
+  <script src="app.js?v=20261023f"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>
