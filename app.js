@@ -4571,8 +4571,10 @@ function renderDashboardWeekKpis(summary, previousSummary, nutritionRows, previo
   const calorieAverage = averageDashboardValue(filledNutrition, row => row.totals.calories);
   const previousCalorieAverage = averageDashboardValue(previousFilledNutrition, row => row.totals.calories);
   const proteinAverage = averageDashboardValue(filledNutrition, row => row.totals.protein);
-  const stepsTotal = nutritionRows.reduce((sum, row) => sum + Number(row.steps || 0), 0);
-  const previousStepsTotal = previousNutritionRows.reduce((sum, row) => sum + Number(row.steps || 0), 0);
+  const stepDays = nutritionRows.filter(row => Number(row.steps) > 0);
+  const previousStepDays = previousNutritionRows.filter(row => Number(row.steps) > 0);
+  const averageSteps = averageDashboardValue(stepDays, row => row.steps);
+  const previousAverageSteps = averageDashboardValue(previousStepDays, row => row.steps);
   const timedSessions = summary.sessions.filter(session => Number(session.minutes) > 0);
   const previousTimedSessions = previousSummary.sessions.filter(session => Number(session.minutes) > 0);
   const averageDuration = averageDashboardValue(timedSessions, session => session.minutes);
@@ -4581,7 +4583,7 @@ function renderDashboardWeekKpis(summary, previousSummary, nutritionRows, previo
   dashboardWeekKpis.innerHTML = [
     dashboardKpiHtml('Trainingen', formatNumber(summary.totals.sessions), previousDates.length ? `${formatDashboardDelta(summary.totals.sessions - previousSummary.totals.sessions)} t.o.v. vorige periode` : 'over alle opgeslagen data', 'accent'),
     dashboardKpiHtml('Gemiddelde trainingsduur', averageDuration ? `${formatNumber(Math.round(averageDuration))} min` : '-', previousAverageDuration ? `${formatDashboardDelta(averageDuration - previousAverageDuration, ' min')} t.o.v. vorige periode` : `${timedSessions.length} training${timedSessions.length === 1 ? '' : 'en'} met tijd`),
-    dashboardKpiHtml('Stappen', stepsTotal ? formatNumber(Math.round(stepsTotal)) : '-', previousDates.length ? `${formatDashboardDelta(stepsTotal - previousStepsTotal)} t.o.v. vorige periode` : 'totaal over alle data'),
+    dashboardKpiHtml('Gemiddelde stappen', averageSteps ? formatNumber(Math.round(averageSteps)) : '-', previousAverageSteps ? `${formatDashboardDelta(averageSteps - previousAverageSteps)} per dag t.o.v. vorige periode` : `${stepDays.length} ingevulde dag${stepDays.length === 1 ? '' : 'en'}`),
     dashboardKpiHtml('Gewicht gemiddeld', weightAverage ? `${formatNumber(Math.round(weightAverage * 100) / 100)} kg` : '-', weightAverage && previousWeightAverage ? `${formatDashboardDelta(weightAverage - previousWeightAverage, ' kg')} t.o.v. vorige periode` : `${weights.length} meting${weights.length === 1 ? '' : 'en'}`),
     dashboardKpiHtml('Calorieën gemiddeld', calorieAverage ? `${formatNumber(Math.round(calorieAverage))} kcal` : '-', previousCalorieAverage ? `${formatDashboardDelta(calorieAverage - previousCalorieAverage, ' kcal')} t.o.v. vorige periode` : `${filledNutrition.length} voedingsdag${filledNutrition.length === 1 ? '' : 'en'}`),
     dashboardKpiHtml('Eiwit gemiddeld', proteinAverage ? `${formatNumber(Math.round(proteinAverage))} g` : '-', `${filledNutrition.length} ingevulde dag${filledNutrition.length === 1 ? '' : 'en'}`)

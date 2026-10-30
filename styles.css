@@ -443,6 +443,9 @@ button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.
 .health-chart-head span { color:var(--muted); font-size:.76rem; }
 .health-chart-head select { max-width:130px; padding:7px 9px; border:1px solid var(--line); border-radius:9px; background:#fff; }
 .health-chart-card canvas { width:100%; height:auto; max-height:280px; }
+.gym-visit-chart { margin-top:16px; }
+.gym-visit-chart .panel-header { align-items:flex-end; }
+.gym-visit-chart .panel-header p { margin:4px 0 0; color:var(--muted); }
 .nutrition-week-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:14px; }
 .nutrition-day-row { border:1px solid var(--line); border-radius:12px; background:#fff; overflow:hidden; }
 .nutrition-day-row.empty { opacity:.7; }

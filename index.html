@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fitness Daglog</title>
-  <link rel="stylesheet" href="styles.css?v=20261030f" />
+  <link rel="stylesheet" href="styles.css?v=20261030g" />
 </head>
 <body>
   <div class="bg"></div>
@@ -216,10 +216,28 @@
             <div class="dashboard-section-heading"><div><span class="eyebrow">Aanwezigheid & tijd</span><h2>Fitnessbezoeken</h2></div><span id="dashboardGymBadge" class="badge">0 trainingen</span></div>
             <div id="dashboardGymKpis" class="dashboard-kpis compact"></div>
             <div id="dashboardGymBreakdown" class="session-count-line"></div>
+            <article class="health-chart-card gym-visit-chart">
+              <div class="panel-header">
+                <div><strong>Fitness bezoeken door de tijd</strong><p>Bekijk hoe vaak je per dag, week, maand of jaar hebt getraind.</p></div>
+                <label class="control inline-select">
+                  <span>Niveau</span>
+                  <select id="visitCountGranularity">
+                    <option value="day">Dag</option>
+                    <option value="week">Week</option>
+                    <option value="month">Maand</option>
+                    <option value="year">Jaar</option>
+                  </select>
+                </label>
+              </div>
+              <div class="progress">
+                <canvas id="visitCountChart" width="720" height="260"></canvas>
+                <div id="visitCountReadout" class="chart-readout">Beweeg over de chart voor details.</div>
+              </div>
+            </article>
           </section>
 
           <details class="dashboard-depth panel-wide">
-            <summary><span><strong>Verdieping</strong><small>Oefeningfocus, spiervolume, trainingsduur, bezoeken, tevredenheid en alle historische grafieken</small></span><b>Open analyses</b></summary>
+            <summary><span><strong>Verdieping</strong><small>Oefeningfocus, spiervolume, trainingsduur, tevredenheid en overige historische grafieken</small></span><b>Open analyses</b></summary>
             <div class="dashboard-depth-grid">
 
           <section class="panel">
@@ -286,27 +304,6 @@
             <div class="progress">
               <canvas id="durationChart" width="360" height="190"></canvas>
               <div id="durationReadout" class="chart-readout">Beweeg over de chart voor details.</div>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-header">
-              <h2>Fitness bezoeken</h2>
-              <div class="mini-actions">
-                <label class="control inline-select">
-                  <span>Niveau</span>
-                  <select id="visitCountGranularity">
-                    <option value="day">Dag</option>
-                    <option value="week">Week</option>
-                    <option value="month">Maand</option>
-                    <option value="year">Jaar</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-            <div class="progress">
-              <canvas id="visitCountChart" width="360" height="190"></canvas>
-              <div id="visitCountReadout" class="chart-readout">Beweeg over de chart voor details.</div>
             </div>
           </section>
 
@@ -903,7 +900,7 @@
   </template>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20261030f"></script>
+  <script src="app.js?v=20261030g"></script>
   <script type="module" src="drive-sync.js?v=20260406d"></script>
 </body>
 </html>
