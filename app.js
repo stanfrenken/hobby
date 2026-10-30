@@ -1081,6 +1081,32 @@ function normalizeExerciseName(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function isRoutineTmTarget(target) {
+  const normalized = normalizeRoutineTargetSnapshot(target);
+  return normalized?.weightMode === 'percentage'
+    && normalized.plannedSets.some(set => hasInputValue(set.percentage));
+}
+
+function findLatestLegacyFixedTarget(name, currentDate = state.date, all = getCurrentDataSnapshot()) {
+  const key = normalizeExerciseName(name);
+  if (!key) return null;
+  const dates = Object.keys(all || {}).filter(date => !currentDate || date < currentDate).sort((a, b) => b.localeCompare(a));
+  for (const date of dates) {
+    const matches = (all[date]?.exercises || []).filter(exercise => normalizeExerciseName(exercise.name) === key);
+    for (const exercise of matches) {
+      const snapshot = normalizeRoutineTargetSnapshot(exercise.routineTargetSnapshot);
+      if (snapshot?.weightMode !== 'fixed' || !snapshot.plannedSets.some(set => hasInputValue(set.reps) || hasInputValue(set.weight))) continue;
+      return routineFixedTargetToExerciseTarget(snapshot);
+    }
+  }
+  return null;
+}
+
+function getExerciseWideTarget(profile, name, all = null) {
+  if (hasExerciseTarget(profile?.nextTarget)) return normalizeExerciseTarget(profile.nextTarget);
+  return findLatestLegacyFixedTarget(name, state.date, all || getCurrentDataSnapshot());
+}
+
 function getCurrentDataSnapshot() {
   const all = loadAll();
   all[state.date] = cloneState();
@@ -1102,7 +1128,7 @@ function applyExerciseProfile(exercise, card, profile, catalog) {
   const selectInput = card?.querySelector('.exercise-select');
   const primarySelect = card?.querySelector('.exercise-primary');
   const secondaryPicker = card?.querySelector('.exercise-secondary-picker');
-  const nextTarget = normalizeExerciseTarget(profile?.nextTarget);
+  const nextTarget = getExerciseWideTarget(profile, profile?.name || exercise?.name);
 
   if (!profile) {
     exercise.primaryGroup = '';
@@ -1198,7 +1224,7 @@ function saveExerciseNextTarget(exercise, card) {
   if (!name) return { ok: false, message: 'Geef eerst een naam aan je oefening.' };
 
   const routineContext = resolveExerciseRoutineContext(exercise);
-  if (routineContext?.target?.weightMode === 'percentage') {
+  if (isRoutineTmTarget(routineContext?.target)) {
     return saveLinkedRoutineExerciseTarget(exercise, card, routineContext);
   }
 
@@ -1574,7 +1600,7 @@ function renderExerciseRoutineTarget(card, exercise, context, profile = null) {
   const banner = card.querySelector('.routine-target-link-banner');
   const editor = card.querySelector('.percentage-target-editor');
   const normalMode = card.querySelector('.next-target-mode');
-  card.classList.toggle('is-routine-percentage-target', context?.target?.weightMode === 'percentage');
+  card.classList.toggle('is-routine-percentage-target', isRoutineTmTarget(context?.target));
   if (!context) {
     card.classList.remove('is-split-tm');
     if (banner) banner.hidden = true;
@@ -1582,7 +1608,7 @@ function renderExerciseRoutineTarget(card, exercise, context, profile = null) {
     if (normalMode) normalMode.hidden = false;
     return;
   }
-  const percentageMode = context.target.weightMode === 'percentage';
+  const percentageMode = isRoutineTmTarget(context.target);
   if (banner) {
     banner.hidden = false;
     banner.innerHTML = percentageMode
@@ -2052,18 +2078,13 @@ function renderExercises() {
       'exercise-secondary'
     );
     const routineContext = resolveExerciseRoutineContext(exercise);
-    const globalExerciseTarget = hasExerciseTarget(displayProfile?.nextTarget)
-      ? displayProfile.nextTarget
-      : null;
-    const targetForDisplay = routineContext?.target?.weightMode === 'percentage'
+    const tmRoutineContext = isRoutineTmTarget(routineContext?.target) ? routineContext : null;
+    const targetForDisplay = tmRoutineContext
       ? null
-      : (globalExerciseTarget
-        || (routineContext?.target?.weightMode === 'fixed'
-          ? routineFixedTargetToExerciseTarget(routineContext.target)
-          : null));
+      : getExerciseWideTarget(displayProfile, exercise.name, all);
     card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(targetForDisplay));
     renderNextTargetInputs(card, targetForDisplay, displayProfile?.trainingMax ?? '');
-    renderExerciseRoutineTarget(card, exercise, routineContext, displayProfile);
+    renderExerciseRoutineTarget(card, exercise, tmRoutineContext, displayProfile);
 
     const previousSession = findLatestPreviousExerciseSession(exercise.name, state.date, all);
     if (previousSessionEl) {
