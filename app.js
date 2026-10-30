@@ -79,6 +79,9 @@ const dashboardWeekExercises = document.getElementById('dashboardWeekExercises')
 const dashboardWeekMuscles = document.getElementById('dashboardWeekMuscles');
 const dashboardWeightNutritionKpis = document.getElementById('dashboardWeightNutritionKpis');
 const dashboardNutritionDays = document.getElementById('dashboardNutritionDays');
+const dashboardGymBadge = document.getElementById('dashboardGymBadge');
+const dashboardGymKpis = document.getElementById('dashboardGymKpis');
+const dashboardGymBreakdown = document.getElementById('dashboardGymBreakdown');
 const weightTrendRangeSelect = document.getElementById('weightTrendRange');
 const weightWeeklyChart = document.getElementById('weightWeeklyChart');
 const weightWeeklyReadout = document.getElementById('weightWeeklyReadout');
@@ -4381,6 +4384,39 @@ function getDashboardSetReps(set, exercise) {
   return getSetRepData(set, exercise).total || 0;
 }
 
+function getDashboardHeaviestSetCandidate(set, exercise, date) {
+  const reps = getSetRepData(set, exercise);
+  const weights = getSetWeightData(set, exercise);
+  const candidates = weights.splitMode
+    ? [
+      { side: 'L', weight: weights.left, reps: reps.left },
+      { side: 'R', weight: weights.right, reps: reps.right }
+    ]
+    : [{ side: '', weight: weights.weight, reps: reps.reps }];
+  return candidates
+    .filter(candidate => Number(candidate.weight) > 0 && Number(candidate.reps) >= 1)
+    .sort((a, b) => Number(b.weight) - Number(a.weight) || Number(b.reps) - Number(a.reps))
+    .map(candidate => ({ ...candidate, date }))[0] || null;
+}
+
+function formatDashboardBestVolumeSet(record) {
+  if (!record) return '-';
+  const reps = getSetRepData(record.set, record.exercise);
+  const weights = getSetWeightData(record.set, record.exercise);
+  const calculation = weights.splitMode
+    ? [
+      Number(reps.left) > 0 && Number(weights.left) > 0 ? `L ${formatNumber(reps.left)} × ${formatNumber(weights.left)}` : '',
+      Number(reps.right) > 0 && Number(weights.right) > 0 ? `R ${formatNumber(reps.right)} × ${formatNumber(weights.right)}` : ''
+    ].filter(Boolean).join(' + ')
+    : `1 × ${formatNumber(reps.reps || 0)} × ${formatNumber(weights.weight || 0)}`;
+  return `${calculation} kg = ${formatNumber(Math.round(record.volume * 10) / 10)} kg`;
+}
+
+function formatDashboardHeaviestSet(record) {
+  if (!record) return '-';
+  return `${record.side ? `${record.side} · ` : ''}${formatNumber(record.weight)} kg × ${formatNumber(record.reps)} rep${Number(record.reps) === 1 ? '' : 's'}`;
+}
+
 function buildDashboardWeekSummary(all, dates) {
   const exercisesByKey = new Map();
   const musclesByKey = new Map();
@@ -4402,7 +4438,7 @@ function buildDashboardWeekSummary(all, dates) {
       dayExercises.push(dayRow);
 
       if (!exercisesByKey.has(key)) {
-        exercisesByKey.set(key, { name, occurrences: 0, sets: 0, reps: 0, volume: 0, days: [] });
+        exercisesByKey.set(key, { name, occurrences: 0, sets: 0, reps: 0, volume: 0, days: [], bestVolumeSet: null, heaviestSet: null });
       }
       const exerciseTotal = exercisesByKey.get(key);
       exerciseTotal.occurrences += 1;
@@ -4410,6 +4446,18 @@ function buildDashboardWeekSummary(all, dates) {
       exerciseTotal.reps += reps;
       exerciseTotal.volume += volume;
       exerciseTotal.days.push(dayRow);
+      sets.forEach(set => {
+        const setRecord = { date, set, exercise, volume: setVolume(set, exercise) };
+        if (setRecord.volume > 0 && (!exerciseTotal.bestVolumeSet || setRecord.volume > exerciseTotal.bestVolumeSet.volume)) {
+          exerciseTotal.bestVolumeSet = setRecord;
+        }
+        const heaviestCandidate = getDashboardHeaviestSetCandidate(set, exercise, date);
+        if (heaviestCandidate && (!exerciseTotal.heaviestSet
+          || Number(heaviestCandidate.weight) > Number(exerciseTotal.heaviestSet.weight)
+          || (Number(heaviestCandidate.weight) === Number(exerciseTotal.heaviestSet.weight) && Number(heaviestCandidate.reps) > Number(exerciseTotal.heaviestSet.reps)))) {
+          exerciseTotal.heaviestSet = heaviestCandidate;
+        }
+      });
 
       const primary = muscles.primary || 'Overig';
       if (!musclesByKey.has(primary)) {
@@ -4523,15 +4571,17 @@ function renderDashboardWeekKpis(summary, previousSummary, nutritionRows, previo
   const calorieAverage = averageDashboardValue(filledNutrition, row => row.totals.calories);
   const previousCalorieAverage = averageDashboardValue(previousFilledNutrition, row => row.totals.calories);
   const proteinAverage = averageDashboardValue(filledNutrition, row => row.totals.protein);
-  const volumeDelta = previousSummary.totals.volume
-    ? ((summary.totals.volume - previousSummary.totals.volume) / previousSummary.totals.volume) * 100
-    : 0;
+  const stepsTotal = nutritionRows.reduce((sum, row) => sum + Number(row.steps || 0), 0);
+  const previousStepsTotal = previousNutritionRows.reduce((sum, row) => sum + Number(row.steps || 0), 0);
+  const timedSessions = summary.sessions.filter(session => Number(session.minutes) > 0);
+  const previousTimedSessions = previousSummary.sessions.filter(session => Number(session.minutes) > 0);
+  const averageDuration = averageDashboardValue(timedSessions, session => session.minutes);
+  const previousAverageDuration = averageDashboardValue(previousTimedSessions, session => session.minutes);
 
   dashboardWeekKpis.innerHTML = [
     dashboardKpiHtml('Trainingen', formatNumber(summary.totals.sessions), previousDates.length ? `${formatDashboardDelta(summary.totals.sessions - previousSummary.totals.sessions)} t.o.v. vorige periode` : 'over alle opgeslagen data', 'accent'),
-    dashboardKpiHtml('Oefeningen', formatNumber(summary.totals.exercises), 'unieke oefeningen'),
-    dashboardKpiHtml('Sets & reps', `${formatNumber(summary.totals.sets)} / ${formatNumber(summary.totals.reps)}`, 'sets / totale reps'),
-    dashboardKpiHtml('Totaal volume', `${formatNumber(Math.round(summary.totals.volume))} kg`, previousSummary.totals.volume ? `${formatDashboardDelta(volumeDelta, '%')} t.o.v. vorige periode` : 'geen vergelijkbare vorige periode', 'volume'),
+    dashboardKpiHtml('Gemiddelde trainingsduur', averageDuration ? `${formatNumber(Math.round(averageDuration))} min` : '-', previousAverageDuration ? `${formatDashboardDelta(averageDuration - previousAverageDuration, ' min')} t.o.v. vorige periode` : `${timedSessions.length} training${timedSessions.length === 1 ? '' : 'en'} met tijd`),
+    dashboardKpiHtml('Stappen', stepsTotal ? formatNumber(Math.round(stepsTotal)) : '-', previousDates.length ? `${formatDashboardDelta(stepsTotal - previousStepsTotal)} t.o.v. vorige periode` : 'totaal over alle data'),
     dashboardKpiHtml('Gewicht gemiddeld', weightAverage ? `${formatNumber(Math.round(weightAverage * 100) / 100)} kg` : '-', weightAverage && previousWeightAverage ? `${formatDashboardDelta(weightAverage - previousWeightAverage, ' kg')} t.o.v. vorige periode` : `${weights.length} meting${weights.length === 1 ? '' : 'en'}`),
     dashboardKpiHtml('Calorieën gemiddeld', calorieAverage ? `${formatNumber(Math.round(calorieAverage))} kcal` : '-', previousCalorieAverage ? `${formatDashboardDelta(calorieAverage - previousCalorieAverage, ' kcal')} t.o.v. vorige periode` : `${filledNutrition.length} voedingsdag${filledNutrition.length === 1 ? '' : 'en'}`),
     dashboardKpiHtml('Eiwit gemiddeld', proteinAverage ? `${formatNumber(Math.round(proteinAverage))} g` : '-', `${filledNutrition.length} ingevulde dag${filledNutrition.length === 1 ? '' : 'en'}`)
@@ -4563,8 +4613,8 @@ function renderDashboardExerciseSummary(summary) {
     dashboardWeekExercises.innerHTML = '<p class="dashboard-empty">Nog geen oefeningen gelogd in deze periode.</p>';
     return;
   }
-  dashboardWeekExercises.innerHTML = summary.exercises.map(row => `<details class="weekly-report-row">
-    <summary><span class="report-name"><strong>${escapeHtml(row.name)}</strong><small>${row.occurrences}× uitgevoerd</small></span><span><b>${row.sets}</b><small>sets</small></span><span><b>${formatNumber(row.reps)}</b><small>reps</small></span><span class="report-volume"><b>${formatNumber(Math.round(row.volume))} kg</b><small>volume</small></span></summary>
+  dashboardWeekExercises.innerHTML = summary.exercises.map(row => `<details class="weekly-report-row exercise-row">
+    <summary><span class="report-name"><strong>${escapeHtml(row.name)}</strong><small>${row.occurrences}× uitgevoerd</small></span><span><b>${row.sets}</b><small>sets</small></span><span><b>${formatNumber(row.reps)}</b><small>reps</small></span><span class="report-volume"><b>${formatNumber(Math.round(row.volume))} kg</b><small>volume</small></span><span class="report-record"><b>${formatDashboardBestVolumeSet(row.bestVolumeSet)}</b><small>beste setvolume${row.bestVolumeSet ? ` · ${formatShortDate(row.bestVolumeSet.date)}` : ''}</small></span><span class="report-record"><b>${formatDashboardHeaviestSet(row.heaviestSet)}</b><small>zwaarste set${row.heaviestSet ? ` · ${formatShortDate(row.heaviestSet.date)}` : ''}</small></span></summary>
     <div class="report-detail">${row.days.map(day => `<button type="button" data-dashboard-date="${day.date}"><span>${formatLongDate(day.date)}</span><b>${day.sets} sets · ${formatNumber(day.reps)} reps · ${formatNumber(Math.round(day.volume))} kg</b></button>`).join('')}</div>
   </details>`).join('');
 }
@@ -4773,6 +4823,31 @@ function renderDashboardNutrition(nutritionRows, all, dates, previousDates) {
   </details>`).join('') : '<p class="dashboard-empty">Geen voeding of gewicht gevonden in deze periode.</p>';
 }
 
+function renderDashboardGymSummary(summary, previousSummary, previousDates) {
+  if (dashboardGymBadge) dashboardGymBadge.textContent = `${summary.totals.sessions} training${summary.totals.sessions === 1 ? '' : 'en'}`;
+  const timedSessions = summary.sessions.filter(session => Number(session.minutes) > 0);
+  const previousTimedSessions = previousSummary.sessions.filter(session => Number(session.minutes) > 0);
+  const totalMinutes = timedSessions.reduce((sum, session) => sum + Number(session.minutes || 0), 0);
+  const previousTotalMinutes = previousTimedSessions.reduce((sum, session) => sum + Number(session.minutes || 0), 0);
+  const averageMinutes = averageDashboardValue(timedSessions, session => session.minutes);
+  const previousAverageMinutes = averageDashboardValue(previousTimedSessions, session => session.minutes);
+  if (dashboardGymKpis) {
+    dashboardGymKpis.innerHTML = [
+      dashboardKpiHtml('Aantal trainingen', formatNumber(summary.totals.sessions), previousDates.length ? `${formatDashboardDelta(summary.totals.sessions - previousSummary.totals.sessions)} t.o.v. vorige periode` : 'over alle opgeslagen data', 'accent'),
+      dashboardKpiHtml('Totale trainingsduur', totalMinutes ? `${formatNumber(totalMinutes)} min` : '-', previousTotalMinutes ? `${formatDashboardDelta(totalMinutes - previousTotalMinutes, ' min')} t.o.v. vorige periode` : `${timedSessions.length} trainingen met tijd`),
+      dashboardKpiHtml('Gemiddelde duur', averageMinutes ? `${formatNumber(Math.round(averageMinutes))} min` : '-', previousAverageMinutes ? `${formatDashboardDelta(averageMinutes - previousAverageMinutes, ' min')} t.o.v. vorige periode` : 'per training met start- en eindtijd')
+    ].join('');
+  }
+  if (!dashboardGymBreakdown) return;
+  const counts = summary.sessions.reduce((result, session) => {
+    result[session.sessionName] = (result[session.sessionName] || 0) + 1;
+    return result;
+  }, {});
+  dashboardGymBreakdown.innerHTML = Object.keys(counts).length
+    ? Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${escapeHtml(name)} <b>${count}×</b>`).join('<span class="dot">·</span>')
+    : '<span>Geen trainingen in deze periode.</span>';
+}
+
 function renderDashboardReport(all) {
   const dates = getDashboardPeriodDates(all);
   const previousDates = getPreviousDashboardPeriodDates(all);
@@ -4785,6 +4860,7 @@ function renderDashboardReport(all) {
   renderDashboardExerciseSummary(summary);
   renderDashboardMuscleSummary(summary);
   renderDashboardNutrition(nutritionRows, all, dates, previousDates);
+  renderDashboardGymSummary(summary, previousSummary, previousDates);
   renderDashboardWeightChart(all);
 }
 
@@ -7190,8 +7266,12 @@ function getDashboardExportData() {
 }
 
 function buildDashboardExerciseExportRows(summary) {
-  const rows = [['Oefening', 'Aantal uitvoeringen', 'Sets', 'Reps', 'Volume (kg)']];
-  summary.exercises.forEach(row => rows.push([row.name, row.occurrences, row.sets, row.reps, row.volume]));
+  const rows = [['Oefening', 'Aantal uitvoeringen', 'Sets', 'Reps', 'Volume (kg)', 'Beste setvolume', 'Datum beste setvolume', 'Zwaarste set', 'Datum zwaarste set']];
+  summary.exercises.forEach(row => rows.push([
+    row.name, row.occurrences, row.sets, row.reps, row.volume,
+    formatDashboardBestVolumeSet(row.bestVolumeSet), row.bestVolumeSet?.date || '',
+    formatDashboardHeaviestSet(row.heaviestSet), row.heaviestSet?.date || ''
+  ]));
   return rows;
 }
 
