@@ -1078,7 +1078,12 @@ function readSecondaryPickerValues(card, inputClassName, primaryValue) {
 }
 
 function normalizeExerciseName(value) {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function isRoutineTmTarget(target) {
@@ -1087,7 +1092,39 @@ function isRoutineTmTarget(target) {
     && normalized.plannedSets.some(set => hasInputValue(set.percentage));
 }
 
-function findLatestLegacyFixedTarget(name, currentDate = state.date, all = getCurrentDataSnapshot()) {
+function hasValidExerciseTrainingMax(profile) {
+  if (!profile) return false;
+  return profile.splitTrainingMax
+    ? Number(profile.leftTrainingMax) > 0 && Number(profile.rightTrainingMax) > 0
+    : Number(profile.trainingMax) > 0;
+}
+
+function isExerciseTmRoutineContext(context, exerciseName, profile = null) {
+  if (!isRoutineTmTarget(context?.target)) return false;
+  const exerciseProfile = profile || getAutoExerciseProfile(exerciseName, getExerciseCatalog(getCurrentDataSnapshot()));
+  return hasValidExerciseTrainingMax(exerciseProfile);
+}
+
+function exerciseLogToTarget(exercise) {
+  const sets = (exercise?.sets || []).filter(hasMeaningfulSetData);
+  if (!sets.length) return null;
+  const splitMode = !!exercise?.splitWeightMode || sets.some(set => usesSplitWeight(set, exercise));
+  return normalizeExerciseTarget({
+    mode: 'detailed',
+    splitMode,
+    targetSets: sets.map(set => ({
+      reps: set.reps ?? '',
+      leftReps: set.leftReps ?? '',
+      rightReps: set.rightReps ?? '',
+      weight: set.weight ?? '',
+      leftWeight: set.leftWeight ?? '',
+      rightWeight: set.rightWeight ?? '',
+      weightMode: usesSplitWeight(set, exercise) ? 'split' : 'single'
+    }))
+  });
+}
+
+function findLatestExerciseWideTargetFallback(name, currentDate = state.date, all = getCurrentDataSnapshot()) {
   const key = normalizeExerciseName(name);
   if (!key) return null;
   const dates = Object.keys(all || {}).filter(date => !currentDate || date < currentDate).sort((a, b) => b.localeCompare(a));
@@ -1095,16 +1132,23 @@ function findLatestLegacyFixedTarget(name, currentDate = state.date, all = getCu
     const matches = (all[date]?.exercises || []).filter(exercise => normalizeExerciseName(exercise.name) === key);
     for (const exercise of matches) {
       const snapshot = normalizeRoutineTargetSnapshot(exercise.routineTargetSnapshot);
-      if (snapshot?.weightMode !== 'fixed' || !snapshot.plannedSets.some(set => hasInputValue(set.reps) || hasInputValue(set.weight))) continue;
-      return routineFixedTargetToExerciseTarget(snapshot);
+      if (snapshot?.weightMode === 'fixed' && snapshot.plannedSets.some(set => hasInputValue(set.reps) || hasInputValue(set.weight))) {
+        return normalizeExerciseTarget({ ...routineFixedTargetToExerciseTarget(snapshot), updatedDate: date });
+      }
+      const performedTarget = exerciseLogToTarget(exercise);
+      if (hasExerciseTarget(performedTarget)) return normalizeExerciseTarget({ ...performedTarget, updatedDate: date });
     }
   }
   return null;
 }
 
 function getExerciseWideTarget(profile, name, all = null) {
-  if (hasExerciseTarget(profile?.nextTarget)) return normalizeExerciseTarget(profile.nextTarget);
-  return findLatestLegacyFixedTarget(name, state.date, all || getCurrentDataSnapshot());
+  const savedTarget = hasExerciseTarget(profile?.nextTarget) ? normalizeExerciseTarget(profile.nextTarget) : null;
+  const latestTarget = findLatestExerciseWideTargetFallback(name, state.date, all || getCurrentDataSnapshot());
+  if (!savedTarget) return latestTarget;
+  if (!latestTarget) return savedTarget;
+  if (!savedTarget.updatedDate || savedTarget.updatedDate < latestTarget.updatedDate) return latestTarget;
+  return savedTarget;
 }
 
 function getCurrentDataSnapshot() {
@@ -1224,11 +1268,15 @@ function saveExerciseNextTarget(exercise, card) {
   if (!name) return { ok: false, message: 'Geef eerst een naam aan je oefening.' };
 
   const routineContext = resolveExerciseRoutineContext(exercise);
-  if (isRoutineTmTarget(routineContext?.target)) {
+  if (isExerciseTmRoutineContext(routineContext, name)) {
     return saveLinkedRoutineExerciseTarget(exercise, card, routineContext);
   }
 
-  const target = readNextTargetFromCard(card, !!exercise.splitWeightMode);
+  const target = normalizeExerciseTarget({
+    ...readNextTargetFromCard(card, !!exercise.splitWeightMode),
+    updatedDate: state.date || todayISO(),
+    updatedAt: Date.now()
+  });
   const trainingMaxInput = card.querySelector('.next-target-tm');
   const trainingMax = trainingMaxInput && hasInputValue(trainingMaxInput.value) ? Number(trainingMaxInput.value) : '';
   if (!hasExerciseTarget(target)) {
@@ -1419,41 +1467,6 @@ function routineWeightMatches(actual, expected) {
   return Math.abs(Number(actual) - Number(expected)) < 0.011;
 }
 
-function inferRoutinePercentage(weight, trainingMax) {
-  if (!Number(weight) || !Number(trainingMax)) return '';
-  return Math.round((Number(weight) / Number(trainingMax) * 100) * 4) / 4;
-}
-
-function convertRoutineTargetToPercentage(item, exercise, trainingMaxes) {
-  if (!item) return null;
-  const sourceSets = item.plannedSets?.length ? item.plannedSets : (exercise?.sets || []);
-  const plannedSets = sourceSets.map((set, index) => {
-    const actualSet = exercise?.sets?.[index] || {};
-    let percentage = set?.percentage ?? '';
-    if (!hasInputValue(percentage)) {
-      if (trainingMaxes.split) {
-        const leftWeight = hasInputValue(set?.leftWeight) ? set.leftWeight : actualSet.leftWeight;
-        const rightWeight = hasInputValue(set?.rightWeight) ? set.rightWeight : actualSet.rightWeight;
-        const left = inferRoutinePercentage(leftWeight, trainingMaxes.left);
-        const right = inferRoutinePercentage(rightWeight, trainingMaxes.right);
-        const sides = [left, right].filter(hasInputValue).map(Number);
-        percentage = sides.length ? Math.round((sides.reduce((sum, value) => sum + value, 0) / sides.length) * 4) / 4 : '';
-      } else {
-        const weight = hasInputValue(set?.weight) ? set.weight : actualSet.weight;
-        percentage = inferRoutinePercentage(weight, trainingMaxes.single);
-      }
-    }
-    return normalizeRoutinePlannedSet({
-      id: set?.id,
-      reps: set?.reps ?? actualSet.reps ?? '',
-      percentage,
-      weight: ''
-    });
-  }).filter(set => hasInputValue(set.reps) || hasInputValue(set.percentage));
-  if (!plannedSets.some(set => hasInputValue(set.percentage))) return null;
-  return { ...item, weightMode: 'percentage', plannedSets };
-}
-
 function getRoutineExerciseCandidates(exercise, routines = loadRoutines()) {
   const exerciseKey = normalizeExerciseName(exercise?.name);
   if (!exerciseKey) return [];
@@ -1514,50 +1527,8 @@ function resolveExerciseRoutineContext(exercise) {
     item = option.exercises?.find(entry => normalizeExerciseName(entry.name) === normalizeExerciseName(exercise?.name)) || null;
   }
 
-  const itemHasPercentages = item?.plannedSets?.some(set => hasInputValue(set.percentage));
-  const itemHasFixedWeights = item?.plannedSets?.some(set => hasInputValue(set.weight) && Number(set.weight) > 0);
-  if (item && item.weightMode !== 'percentage' && storedSnapshot?.weightMode === 'percentage' && storedSnapshot.plannedSets.some(set => hasInputValue(set.percentage))) {
-    item = {
-      ...item,
-      weightMode: 'percentage',
-      roundingIncrement: storedSnapshot.roundingIncrement,
-      targetNote: storedSnapshot.note,
-      plannedSets: storedSnapshot.plannedSets.map(normalizeRoutinePlannedSet)
-    };
-  } else if (item && item.weightMode !== 'percentage' && itemHasPercentages && !itemHasFixedWeights) {
-    item = { ...item, weightMode: 'percentage' };
-  }
-
   let resolvedDayKey = link?.dayKey || '';
-  if (item && item.weightMode !== 'percentage') {
-    const tmProfile = getExerciseTrainingMaxProfile(exercise?.name);
-    const hasTrainingMax = Number(tmProfile.single) > 0 || (tmProfile.split && Number(tmProfile.left) > 0 && Number(tmProfile.right) > 0);
-    if (hasTrainingMax) {
-      const exerciseKey = normalizeExerciseName(exercise?.name);
-      const hasPercentageRoutine = Object.values(routines).flat().some(routineOption => (routineOption.exercises || []).some(routineItem =>
-        normalizeExerciseName(routineItem.name) === exerciseKey
-        && routineItem.weightMode === 'percentage'
-        && getFilledRoutineSets(routineItem).some(set => hasInputValue(set.percentage))));
-      if (hasPercentageRoutine) {
-        item = convertRoutineTargetToPercentage(item, exercise, tmProfile) || item;
-      }
-
-      const candidates = getRoutineExerciseCandidates(exercise, routines).sort((a, b) => b.score - a.score);
-      const currentCandidate = candidates.find(candidate => candidate.dayKey === resolvedDayKey
-        && candidate.option.id === option?.id
-        && candidate.item.id === item.id);
-      const percentageCandidate = candidates.find(candidate => candidate.item.weightMode === 'percentage'
-        && getFilledRoutineSets(candidate.item).some(set => hasInputValue(set.percentage))
-        && (candidate.dayKey === resolvedDayKey || candidate.dayKey === getRoutineDayKeyFromDate(state.date || todayISO())));
-      if (percentageCandidate && percentageCandidate.score >= 85 && percentageCandidate.score > (currentCandidate?.score || 0) + 5) {
-        resolvedDayKey = percentageCandidate.dayKey;
-        option = percentageCandidate.option;
-        item = percentageCandidate.item;
-      }
-    }
-  }
-
-  if (!item) {
+  if (link && !item) {
     const candidates = getRoutineExerciseCandidates(exercise, routines).sort((a, b) => b.score - a.score);
     const best = candidates[0];
     const second = candidates[1];
@@ -2078,7 +2049,7 @@ function renderExercises() {
       'exercise-secondary'
     );
     const routineContext = resolveExerciseRoutineContext(exercise);
-    const tmRoutineContext = isRoutineTmTarget(routineContext?.target) ? routineContext : null;
+    const tmRoutineContext = isExerciseTmRoutineContext(routineContext, exercise.name, displayProfile) ? routineContext : null;
     const targetForDisplay = tmRoutineContext
       ? null
       : getExerciseWideTarget(displayProfile, exercise.name, all);
@@ -3649,7 +3620,8 @@ function findLatestPreviousExerciseSession(name, currentDate, all = loadAll()) {
       if (!date || date >= currentDate) return;
       const matches = (day.exercises || []).filter(ex => normalizeExerciseName(ex.name) === normalizedName);
       if (!matches.length) return;
-      const sets = matches.flatMap(ex => ex.sets || []);
+      const sets = matches.flatMap(ex => (ex.sets || []).filter(hasMeaningfulSetData));
+      if (!sets.length) return;
       latest = {
         date,
         sets,
@@ -3996,7 +3968,9 @@ function normalizeExerciseTarget(target) {
     leftWeight: target?.leftWeight ?? '',
     rightWeight: target?.rightWeight ?? '',
     note: String(target?.note || '').trim(),
-    targetSets
+    targetSets,
+    updatedDate: /^\d{4}-\d{2}-\d{2}$/.test(String(target?.updatedDate || '')) ? String(target.updatedDate) : '',
+    updatedAt: Number.isFinite(Number(target?.updatedAt)) ? Number(target.updatedAt) : 0
   };
 }
 
