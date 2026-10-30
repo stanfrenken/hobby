@@ -1198,7 +1198,9 @@ function saveExerciseNextTarget(exercise, card) {
   if (!name) return { ok: false, message: 'Geef eerst een naam aan je oefening.' };
 
   const routineContext = resolveExerciseRoutineContext(exercise);
-  if (routineContext) return saveLinkedRoutineExerciseTarget(exercise, card, routineContext);
+  if (routineContext?.target?.weightMode === 'percentage') {
+    return saveLinkedRoutineExerciseTarget(exercise, card, routineContext);
+  }
 
   const target = readNextTargetFromCard(card, !!exercise.splitWeightMode);
   const trainingMaxInput = card.querySelector('.next-target-tm');
@@ -1224,7 +1226,7 @@ function saveExerciseNextTarget(exercise, card) {
 
   const routineCount = countRoutineOccurrences(name);
   return saved
-    ? { ok: true, message: hasInputValue(trainingMax) ? `Target opgeslagen. TM ${formatNumber(trainingMax)} kg werkt door in ${routineCount} vaste schema${routineCount === 1 ? '' : "'s"}.` : 'Target opgeslagen.' }
+    ? { ok: true, message: hasInputValue(trainingMax) ? `Target opgeslagen. TM ${formatNumber(trainingMax)} kg werkt door in ${routineCount} vaste schema${routineCount === 1 ? '' : "'s"}.` : `Target voor ${name} opgeslagen en beschikbaar op iedere trainingsdag.` }
     : { ok: false, message: 'Kon je target niet opslaan.' };
 }
 
@@ -1580,11 +1582,13 @@ function renderExerciseRoutineTarget(card, exercise, context, profile = null) {
     if (normalMode) normalMode.hidden = false;
     return;
   }
+  const percentageMode = context.target.weightMode === 'percentage';
   if (banner) {
     banner.hidden = false;
-    banner.innerHTML = `<strong>Gekoppeld aan ${escapeHtml(context.label)}</strong><span>TM geldt voor deze oefening op alle vaste dagen; sets en percentages alleen voor deze routine.</span>`;
+    banner.innerHTML = percentageMode
+      ? `<strong>Gekoppeld aan ${escapeHtml(context.label)}</strong><span>TM geldt voor deze oefening op alle vaste dagen; sets en percentages alleen voor deze routine.</span>`
+      : `<strong>Vast schema: ${escapeHtml(context.label)}</strong><span>Een target dat je hier bewaart, geldt voor ${escapeHtml(exercise?.name || 'deze oefening')} op iedere trainingsdag.</span>`;
   }
-  const percentageMode = context.target.weightMode === 'percentage';
   if (percentageMode) {
     card.classList.remove('is-target-detailed');
     const normalTargetRows = card.querySelector('.target-sets-body');
@@ -2048,11 +2052,15 @@ function renderExercises() {
       'exercise-secondary'
     );
     const routineContext = resolveExerciseRoutineContext(exercise);
-    const targetForDisplay = routineContext
-      ? (routineContext.target.weightMode === 'fixed'
-        ? routineFixedTargetToExerciseTarget(routineContext.target)
-        : null)
-      : (displayProfile?.nextTarget || null);
+    const globalExerciseTarget = hasExerciseTarget(displayProfile?.nextTarget)
+      ? displayProfile.nextTarget
+      : null;
+    const targetForDisplay = routineContext?.target?.weightMode === 'percentage'
+      ? null
+      : (globalExerciseTarget
+        || (routineContext?.target?.weightMode === 'fixed'
+          ? routineFixedTargetToExerciseTarget(routineContext.target)
+          : null));
     card.classList.toggle('is-target-detailed', isDetailedExerciseTarget(targetForDisplay));
     renderNextTargetInputs(card, targetForDisplay, displayProfile?.trainingMax ?? '');
     renderExerciseRoutineTarget(card, exercise, routineContext, displayProfile);
